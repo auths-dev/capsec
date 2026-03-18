@@ -20,7 +20,10 @@ fn clean_crate_zero_findings() {
     let parsed = parse_source(&source, "clean_crate/src/lib.rs").unwrap();
     let detector = Detector::new();
     let findings = detector.analyse(&parsed, "clean_crate", "0.1.0");
-    assert!(findings.is_empty(), "Clean crate should have zero findings, got: {findings:?}");
+    assert!(
+        findings.is_empty(),
+        "Clean crate should have zero findings, got: {findings:?}"
+    );
 }
 
 #[test]
@@ -30,7 +33,10 @@ fn fs_crate_detects_filesystem_calls() {
     let detector = Detector::new();
     let findings = detector.analyse(&parsed, "fs_crate", "0.1.0");
 
-    let fs_findings: Vec<_> = findings.iter().filter(|f| f.category == Category::Fs).collect();
+    let fs_findings: Vec<_> = findings
+        .iter()
+        .filter(|f| f.category == Category::Fs)
+        .collect();
     assert!(
         fs_findings.len() >= 8,
         "Expected at least 8 FS findings, got {}",
@@ -39,12 +45,30 @@ fn fs_crate_detects_filesystem_calls() {
 
     // Check specific detections
     let calls: Vec<&str> = fs_findings.iter().map(|f| f.call_text.as_str()).collect();
-    assert!(calls.iter().any(|c| c.contains("read_to_string")), "Should detect read_to_string");
-    assert!(calls.iter().any(|c| c.contains("write")), "Should detect write");
-    assert!(calls.iter().any(|c| c.ends_with("open")), "Should detect File::open");
-    assert!(calls.iter().any(|c| c.ends_with("create")), "Should detect File::create");
-    assert!(calls.iter().any(|c| c.contains("remove_file")), "Should detect remove_file");
-    assert!(calls.iter().any(|c| c.contains("remove_dir_all")), "Should detect remove_dir_all");
+    assert!(
+        calls.iter().any(|c| c.contains("read_to_string")),
+        "Should detect read_to_string"
+    );
+    assert!(
+        calls.iter().any(|c| c.contains("write")),
+        "Should detect write"
+    );
+    assert!(
+        calls.iter().any(|c| c.ends_with("open")),
+        "Should detect File::open"
+    );
+    assert!(
+        calls.iter().any(|c| c.ends_with("create")),
+        "Should detect File::create"
+    );
+    assert!(
+        calls.iter().any(|c| c.contains("remove_file")),
+        "Should detect remove_file"
+    );
+    assert!(
+        calls.iter().any(|c| c.contains("remove_dir_all")),
+        "Should detect remove_dir_all"
+    );
 }
 
 #[test]
@@ -54,7 +78,10 @@ fn net_crate_detects_network_calls() {
     let detector = Detector::new();
     let findings = detector.analyse(&parsed, "net_crate", "0.1.0");
 
-    let net_findings: Vec<_> = findings.iter().filter(|f| f.category == Category::Net).collect();
+    let net_findings: Vec<_> = findings
+        .iter()
+        .filter(|f| f.category == Category::Net)
+        .collect();
     assert!(
         net_findings.len() >= 3,
         "Expected at least 3 NET findings, got {}",
@@ -80,11 +107,17 @@ fn sneaky_crate_detects_imported_calls() {
     let findings = detector.analyse(&parsed, "sneaky_crate", "0.1.0");
 
     // Should detect read_to_string via import expansion
-    let fs_findings: Vec<_> = findings.iter().filter(|f| f.category == Category::Fs).collect();
+    let fs_findings: Vec<_> = findings
+        .iter()
+        .filter(|f| f.category == Category::Fs)
+        .collect();
     assert!(!fs_findings.is_empty(), "Should detect imported fs calls");
 
     // Should detect env::var
-    let env_findings: Vec<_> = findings.iter().filter(|f| f.category == Category::Env).collect();
+    let env_findings: Vec<_> = findings
+        .iter()
+        .filter(|f| f.category == Category::Env)
+        .collect();
     assert!(!env_findings.is_empty(), "Should detect env::var calls");
 
     // Should detect Command::new
@@ -108,8 +141,14 @@ fn aliased_crate_detects_renamed_imports() {
         "Aliased imports should be detected via import expansion"
     );
 
-    let fs_findings: Vec<_> = findings.iter().filter(|f| f.category == Category::Fs).collect();
-    assert!(!fs_findings.is_empty(), "Aliased fs::read should be detected");
+    let fs_findings: Vec<_> = findings
+        .iter()
+        .filter(|f| f.category == Category::Fs)
+        .collect();
+    assert!(
+        !fs_findings.is_empty(),
+        "Aliased fs::read should be detected"
+    );
 }
 
 #[test]
@@ -154,7 +193,10 @@ fn config_allow_suppresses_findings() {
 
     let before = findings.len();
     findings.retain(|f| !cargo_capsec::config::should_allow(f, &cfg));
-    assert!(findings.len() < before, "Allow rule should suppress at least one finding");
+    assert!(
+        findings.len() < before,
+        "Allow rule should suppress at least one finding"
+    );
 }
 
 #[test]
@@ -164,10 +206,14 @@ fn baseline_round_trip() {
     let detector = Detector::new();
     let findings = detector.analyse(&parsed, "net_crate", "0.1.0");
 
-    let dir = tempfile::tempdir().unwrap();
-    cargo_capsec::baseline::save_baseline(dir.path(), &findings).unwrap();
+    let root = capsec_core::root::test_root();
+    let read_cap = root.grant::<capsec_core::permission::FsRead>();
+    let write_cap = root.grant::<capsec_core::permission::FsWrite>();
 
-    let loaded = cargo_capsec::baseline::load_baseline(dir.path()).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    cargo_capsec::baseline::save_baseline(dir.path(), &findings, &write_cap).unwrap();
+
+    let loaded = cargo_capsec::baseline::load_baseline(dir.path(), &read_cap).unwrap();
     assert_eq!(loaded.len(), findings.len());
 
     let diff = cargo_capsec::baseline::diff(&findings, &loaded);

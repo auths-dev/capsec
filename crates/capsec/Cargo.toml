@@ -1,0 +1,21 @@
+[package]
+name = "capsec"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Compile-time capability-based security for Rust"
+keywords = ["security", "capability", "type-system", "least-privilege"]
+categories = ["development-tools", "rust-patterns"]
+
+[features]
+test-support = ["capsec-core/test-support"]
+
+[dependencies]
+capsec-core.workspace = true
+capsec-macro.workspace = true
+capsec-std.workspace = true
+
+[dev-dependencies]
+trybuild.workspace = true
+capsec-core = { workspace = true, features = ["test-support"] }

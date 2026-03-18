@@ -1,0 +1,17 @@
+[package]
+name = "capsec-macro"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Procedural macros for capsec: #[requires] and #[deny] capability annotations"
+keywords = ["security", "capability", "proc-macro"]
+categories = ["development-tools::procedural-macro-helpers"]
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn.workspace = true
+quote.workspace = true
+proc-macro2.workspace = true

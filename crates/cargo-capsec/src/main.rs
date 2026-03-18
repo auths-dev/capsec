@@ -21,10 +21,17 @@ fn main() {
 }
 
 fn run_audit(args: AuditArgs) {
+    // Grant capabilities — this is the single point of ambient authority.
+    // Every I/O operation below traces back to these grants.
+    let cap_root = capsec_core::root::test_root();
+    let fs_read = cap_root.grant::<capsec_core::permission::FsRead>();
+    let fs_write = cap_root.grant::<capsec_core::permission::FsWrite>();
+    let spawn_cap = cap_root.grant::<capsec_core::permission::Spawn>();
+
     let workspace_root = args.path.canonicalize().unwrap_or(args.path.clone());
 
     // Load config
-    let cfg = match config::load_config(&workspace_root) {
+    let cfg = match config::load_config(&workspace_root, &fs_read) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("Warning: {e}");
@@ -33,7 +40,7 @@ fn run_audit(args: AuditArgs) {
     };
 
     // Discover crates
-    let crates = match discovery::discover_crates(&workspace_root, args.include_deps) {
+    let crates = match discovery::discover_crates(&workspace_root, args.include_deps, &spawn_cap, &fs_read) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("Error: {e}");
@@ -70,14 +77,14 @@ fn run_audit(args: AuditArgs) {
     let mut all_findings = Vec::new();
 
     for krate in &crates {
-        let source_files = discovery::discover_source_files(&krate.source_dir);
+        let source_files = discovery::discover_source_files(&krate.source_dir, &fs_read);
 
         for file_path in source_files {
             if config::should_exclude(&file_path, &cfg.analysis.exclude) {
                 continue;
             }
 
-            match parser::parse_file(&file_path) {
+            match parser::parse_file(&file_path, &fs_read) {
                 Ok(parsed) => {
                     let findings = det.analyse(&parsed, &krate.name, &krate.version);
                     all_findings.extend(findings);
@@ -90,7 +97,7 @@ fn run_audit(args: AuditArgs) {
     }
 
     // Filter by risk level
-    let min_risk = Risk::from_str(&args.min_risk);
+    let min_risk = Risk::parse(&args.min_risk);
     all_findings.retain(|f| f.risk >= min_risk);
 
     // Apply allow rules
@@ -98,7 +105,7 @@ fn run_audit(args: AuditArgs) {
 
     // Load baseline once if needed for diff or fail-on
     let baseline_data = if args.diff || args.fail_on.is_some() {
-        baseline::load_baseline(&workspace_root)
+        baseline::load_baseline(&workspace_root, &fs_read)
     } else {
         None
     };
@@ -124,7 +131,7 @@ fn run_audit(args: AuditArgs) {
 
     // Save baseline
     if args.baseline {
-        match baseline::save_baseline(&workspace_root, &all_findings) {
+        match baseline::save_baseline(&workspace_root, &all_findings, &fs_write) {
             Ok(()) => eprintln!("Baseline saved to .capsec-baseline.json"),
             Err(e) => eprintln!("Warning: Failed to save baseline: {e}"),
         }
@@ -132,7 +139,7 @@ fn run_audit(args: AuditArgs) {
 
     // Exit code
     if let Some(ref fail_level) = args.fail_on {
-        let threshold = Risk::from_str(fail_level);
+        let threshold = Risk::parse(fail_level);
 
         if args.diff {
             if let Some(ref bl) = baseline_data {

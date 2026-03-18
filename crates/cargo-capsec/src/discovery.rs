@@ -10,7 +10,6 @@
 
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 /// Metadata about a crate discovered in the workspace.
 #[derive(Debug, Clone)]
@@ -44,7 +43,12 @@ struct Package {
 /// When `include_deps` is `false` (default), passes `--no-deps` for speed — only
 /// workspace members and path dependencies appear. When `true`, all transitive
 /// dependencies with cached source are included.
-pub fn discover_crates(workspace_root: &Path, include_deps: bool) -> Result<Vec<CrateInfo>, String> {
+pub fn discover_crates(
+    workspace_root: &Path,
+    include_deps: bool,
+    spawn_cap: &impl capsec_core::has::Has<capsec_core::permission::Spawn>,
+    _fs_cap: &impl capsec_core::has::Has<capsec_core::permission::FsRead>,
+) -> Result<Vec<CrateInfo>, String> {
     // Use --no-deps by default for speed (avoids resolving 300+ transitive deps).
     // Drop it when --include-deps is set so path dependencies and registry crates appear.
     let mut args = vec!["metadata", "--format-version=1"];
@@ -52,7 +56,7 @@ pub fn discover_crates(workspace_root: &Path, include_deps: bool) -> Result<Vec<
         args.push("--no-deps");
     }
 
-    let output = Command::new("cargo")
+    let output = capsec_std::process::command("cargo", spawn_cap)
         .args(&args)
         .current_dir(workspace_root)
         .output()
@@ -93,9 +97,12 @@ pub fn discover_crates(workspace_root: &Path, include_deps: bool) -> Result<Vec<
 ///
 /// Skips `target/` and hidden directories. Also checks for `build.rs` at the
 /// crate root (the parent of the `src/` directory).
-pub fn discover_source_files(dir: &Path) -> Vec<PathBuf> {
+pub fn discover_source_files(
+    dir: &Path,
+    cap: &impl capsec_core::has::Has<capsec_core::permission::FsRead>,
+) -> Vec<PathBuf> {
     let mut files = Vec::new();
-    discover_recursive(dir, &mut files);
+    discover_recursive(dir, &mut files, cap);
 
     // Also check for build.rs at the crate root (parent of src/)
     if let Some(crate_root) = dir.parent() {
@@ -108,8 +115,12 @@ pub fn discover_source_files(dir: &Path) -> Vec<PathBuf> {
     files
 }
 
-fn discover_recursive(dir: &Path, files: &mut Vec<PathBuf>) {
-    let entries = match std::fs::read_dir(dir) {
+fn discover_recursive(
+    dir: &Path,
+    files: &mut Vec<PathBuf>,
+    cap: &impl capsec_core::has::Has<capsec_core::permission::FsRead>,
+) {
+    let entries = match capsec_std::fs::read_dir(dir, cap) {
         Ok(e) => e,
         Err(_) => return,
     };
@@ -119,7 +130,7 @@ fn discover_recursive(dir: &Path, files: &mut Vec<PathBuf>) {
         if path.is_dir() {
             let name = path.file_name().unwrap_or_default().to_str().unwrap_or("");
             if name != "target" && !name.starts_with('.') {
-                discover_recursive(&path, files);
+                discover_recursive(&path, files, cap);
             }
         } else if path.extension().is_some_and(|e| e == "rs") {
             files.push(path);
@@ -133,9 +144,15 @@ mod tests {
 
     #[test]
     fn discover_source_files_finds_rs_files() {
+        let root = capsec_core::root::test_root();
+        let cap = root.grant::<capsec_core::permission::FsRead>();
         let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src");
-        let files = discover_source_files(&dir);
+        let files = discover_source_files(&dir, &cap);
         assert!(!files.is_empty());
-        assert!(files.iter().all(|f| f.extension().unwrap_or_default() == "rs"));
+        assert!(
+            files
+                .iter()
+                .all(|f| f.extension().unwrap_or_default() == "rs")
+        );
     }
 }

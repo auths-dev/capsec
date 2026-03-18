@@ -1,0 +1,4 @@
+# capsec-std is the wrapper layer — it's the one place allowed to call raw std I/O.
+# Its entire job is gating those calls behind capability tokens.
+[[allow]]
+crate = "capsec-std"

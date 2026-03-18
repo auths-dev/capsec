@@ -90,7 +90,7 @@ impl Risk {
     /// Parses a risk level from a string. Returns [`Risk::Low`] for unrecognized input.
     ///
     /// Accepts: `"low"`, `"medium"`, `"high"`, `"critical"`.
-    pub fn from_str(s: &str) -> Self {
+    pub fn parse(s: &str) -> Self {
         match s {
             "low" => Self::Low,
             "medium" => Self::Medium,
