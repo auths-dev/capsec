@@ -19,6 +19,13 @@
 //! | [`Spawn`] | Process | Execute subprocesses |
 //! | [`Ambient`] | Everything | Full ambient authority — the "god token" |
 //!
+//! # Tuples
+//!
+//! Two permissions can be bundled via a tuple: `(FsRead, NetConnect)` is itself
+//! a `Permission`, and `Cap<(FsRead, NetConnect)>` satisfies both `Has<FsRead>`
+//! and `Has<NetConnect>`. All 2-tuple combinations of built-in permissions are
+//! supported.
+//!
 //! # Subsumption
 //!
 //! Some permissions imply others. [`FsAll`] subsumes both [`FsRead`] and [`FsWrite`],
@@ -88,6 +95,10 @@ impl Permission for EnvWrite {}
 impl Permission for Spawn {}
 impl Permission for Ambient {}
 
+// ── Tuple permissions ─────────────────────────────────────────────
+
+impl<A: Permission, B: Permission> Permission for (A, B) {}
+
 // ── Subsumption ─────────────────────────────────────────────────
 
 /// Indicates that `Self` implies permission `P`.
@@ -117,6 +128,7 @@ mod sealed {
     impl Sealed for super::EnvWrite {}
     impl Sealed for super::Spawn {}
     impl Sealed for super::Ambient {}
+    impl<A: Sealed, B: Sealed> Sealed for (A, B) {}
 }
 
 #[cfg(test)]
@@ -140,6 +152,11 @@ mod tests {
 
     // Compile-time proof that subsumption relationships hold:
     fn _assert_subsumes<Super: Subsumes<Sub>, Sub: Permission>() {}
+
+    #[test]
+    fn tuple_permission_is_zst() {
+        assert_eq!(size_of::<(FsRead, NetConnect)>(), 0);
+    }
 
     #[test]
     fn subsumption_relationships() {
