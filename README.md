@@ -3,7 +3,6 @@
 [![CI](https://github.com/bordumb/capsec/actions/workflows/ci.yml/badge.svg)](https://github.com/bordumb/capsec/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/capsec.svg)](https://crates.io/crates/capsec)
 [![docs.rs](https://docs.rs/capsec/badge.svg)](https://docs.rs/capsec)
-[![License: Apache-2.0](https://img.shields.io/crates/l/capsec.svg)](LICENSE)
 
 Capability-based security tooling for Rust.
 
