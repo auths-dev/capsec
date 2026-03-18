@@ -62,6 +62,10 @@ jobs:
 
 New high-risk I/O in a PR? CI fails. No new I/O? CI passes. Teams can adopt incrementally with `--baseline` and `--diff` to only flag *new* findings.
 
+To see it in action, you can reference these:
+* [CI/CD](https://github.com/bordumb/capsec/blob/main/.github/workflows/ci.yml#L49-L56)
+* [Pre-Commit Hook](https://github.com/bordumb/capsec/blob/main/.pre-commit-config.yaml#L35-L40)
+
 ---
 
 ## capsec — Compile-Time Capability Enforcement
