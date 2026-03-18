@@ -85,7 +85,7 @@ reason = "Logging framework, reviewed"
 
 - **Use aliases**: `use std::fs::read as r; r(...)` — the import is flagged, but the bare aliased call may not be detected in all cases.
 - **Method call matching is contextual**: `.output()`, `.spawn()`, `.status()` only flag when `Command::new` is in the same function. `.send_to()` requires `UdpSocket::bind`. Other method names not matched.
-- **Proc macro generated code** is not visible to the analysis.
+- **Proc macro generated code** is not visible to the analysis. This is inherent to syntax-level tooling — `cargo expand` support is on the roadmap.
 - **No data flow analysis**: Dead code will be flagged.
 - **FFI**: `extern` blocks are detected but individual libc calls aren't categorized.
 
