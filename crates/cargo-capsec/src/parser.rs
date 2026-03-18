@@ -230,9 +230,11 @@ impl<'ast> Visit<'ast> for FileVisitor {
         }
     }
 
-    fn visit_expr_path(&mut self, node: &'ast syn::ExprPath) {
-        if let Some(ref mut func) = self.current_function {
-            let segments: Vec<String> = node
+    fn visit_expr_call(&mut self, node: &'ast syn::ExprCall) {
+        if let Some(ref mut func) = self.current_function
+            && let syn::Expr::Path(ref path) = *node.func
+        {
+            let segments: Vec<String> = path
                 .path
                 .segments
                 .iter()
@@ -242,13 +244,13 @@ impl<'ast> Visit<'ast> for FileVisitor {
             if !segments.is_empty() {
                 func.calls.push(CallSite {
                     segments,
-                    line: node
+                    line: path
                         .path
                         .segments
                         .first()
                         .map(|s| s.ident.span().start().line)
                         .unwrap_or(0),
-                    col: node
+                    col: path
                         .path
                         .segments
                         .first()
@@ -259,7 +261,7 @@ impl<'ast> Visit<'ast> for FileVisitor {
             }
         }
 
-        syn::visit::visit_expr_path(self, node);
+        syn::visit::visit_expr_call(self, node);
     }
 
     fn visit_expr_method_call(&mut self, node: &'ast syn::ExprMethodCall) {
@@ -445,6 +447,37 @@ mod tests {
         assert_eq!(parsed.functions.len(), 2);
         let load = parsed.functions.iter().find(|f| f.name == "load").unwrap();
         assert!(!load.calls.is_empty());
+    }
+
+    #[test]
+    fn enum_variants_not_captured_as_calls() {
+        let source = r#"
+            enum Category { Fs, Net }
+            fn classify() -> Category {
+                let cat = Category::Fs;
+                let none: Option<i32> = Option::None;
+                cat
+            }
+        "#;
+        let parsed = parse_source(source, "test.rs").unwrap();
+        let func = parsed
+            .functions
+            .iter()
+            .find(|f| f.name == "classify")
+            .unwrap();
+        let fn_calls: Vec<&CallSite> = func
+            .calls
+            .iter()
+            .filter(|c| matches!(c.kind, CallKind::FunctionCall))
+            .collect();
+        assert!(
+            fn_calls.is_empty(),
+            "Enum variants should not be captured as function calls, got: {:?}",
+            fn_calls
+                .iter()
+                .map(|c| c.segments.join("::"))
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]
