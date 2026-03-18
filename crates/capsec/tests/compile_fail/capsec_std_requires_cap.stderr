@@ -1,0 +1,15 @@
+error[E0061]: this function takes 2 arguments but 1 argument was supplied
+ --> tests/compile_fail/capsec_std_requires_cap.rs:3:13
+  |
+3 |     let _ = capsec::fs::read_to_string("/etc/passwd");
+  |             ^^^^^^^^^^^^^^^^^^^^^^^^^^--------------- argument #2 of type `&_` is missing
+  |
+note: function defined here
+ --> $WORKSPACE/crates/capsec-std/src/fs.rs
+  |
+  | pub fn read_to_string(
+  |        ^^^^^^^^^^^^^^
+help: provide the argument
+  |
+3 |     let _ = capsec::fs::read_to_string("/etc/passwd", /* _cap */);
+  |                                                     ++++++++++++
