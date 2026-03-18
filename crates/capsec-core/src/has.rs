@@ -24,8 +24,8 @@
 //! fn sync_data(fs: &impl Has<FsRead>, net: &impl Has<NetConnect>) { ... }
 //! ```
 //!
-//! Or use a subsumption type like [`FsAll`](crate::permission::FsAll) or
-//! [`Ambient`](crate::permission::Ambient) that satisfies multiple bounds.
+//! Or use a subsumption type like [`FsAll`] or
+//! [`Ambient`] that satisfies multiple bounds.
 //!
 //! # Subsumption
 //!
