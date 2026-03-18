@@ -37,7 +37,7 @@ pub trait Scope: 'static {
 /// # use capsec_core::permission::FsRead;
 /// # use capsec_core::attenuate::DirScope;
 /// let root = test_root();
-/// let scoped = root.grant::<FsRead>().attenuate(DirScope::new("/tmp"));
+/// let scoped = root.grant::<FsRead>().attenuate(DirScope::new("/tmp").unwrap());
 /// assert!(scoped.check("/tmp/data.txt").is_ok());
 /// assert!(scoped.check("/etc/passwd").is_err());
 /// ```
@@ -73,7 +73,7 @@ impl<P: Permission, S: Scope> Attenuated<P, S> {
 ///
 /// ```
 /// # use capsec_core::attenuate::{DirScope, Scope};
-/// let scope = DirScope::new("/tmp");
+/// let scope = DirScope::new("/tmp").unwrap();
 /// // Note: check will fail if /tmp/data.txt doesn't exist (canonicalization)
 /// ```
 pub struct DirScope {
@@ -82,10 +82,12 @@ pub struct DirScope {
 
 impl DirScope {
     /// Creates a new directory scope rooted at the given path.
-    pub fn new(root: impl AsRef<Path>) -> Self {
-        Self {
-            root: root.as_ref().to_path_buf(),
-        }
+    ///
+    /// The root path is canonicalized to prevent bypass via symlinks or `..` components.
+    /// Returns an error if the root path does not exist or cannot be resolved.
+    pub fn new(root: impl AsRef<Path>) -> Result<Self, CapSecError> {
+        let canonical = root.as_ref().canonicalize().map_err(CapSecError::Io)?;
+        Ok(Self { root: canonical })
     }
 }
 
@@ -164,7 +166,7 @@ mod tests {
     #[test]
     fn dir_scope_rejects_traversal() {
         // Create a scope for a real directory
-        let scope = DirScope::new("/tmp");
+        let scope = DirScope::new("/tmp").unwrap();
         // Trying to escape via ../
         let result = scope.check("/tmp/../etc/passwd");
         // This should either fail (if /etc/passwd doesn't exist for canonicalization)

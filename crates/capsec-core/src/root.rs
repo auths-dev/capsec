@@ -12,7 +12,7 @@
 //!
 //! # Testing
 //!
-//! [`test_root()`] bypasses the singleton check and is available under `#[cfg(test)]`
+//! `test_root()` bypasses the singleton check and is available under `#[cfg(test)]`
 //! or the `test-support` feature flag. Use it in unit tests to avoid singleton
 //! conflicts across parallel test threads.
 
@@ -42,7 +42,7 @@ pub struct CapRoot {
 
 /// Creates the singleton capability root. Panics if called more than once.
 ///
-/// Use [`try_root`] for a non-panicking alternative. In tests, use [`test_root`].
+/// Use [`try_root`] for a non-panicking alternative. In tests, use `test_root`.
 pub fn root() -> CapRoot {
     if ROOT_CREATED.swap(true, Ordering::SeqCst) {
         panic!("capsec::root() called more than once — use try_root() or test_root() instead");

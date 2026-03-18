@@ -5,6 +5,7 @@
 /// Most commonly seen when an [`Attenuated`](crate::attenuate::Attenuated) capability
 /// rejects an operation that falls outside its scope.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum CapSecError {
     /// The target of a capability operation is outside the granted scope.
     ///
