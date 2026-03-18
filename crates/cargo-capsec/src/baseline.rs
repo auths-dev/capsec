@@ -21,7 +21,7 @@ const BASELINE_FILE: &str = ".capsec-baseline.json";
 /// Baseline entries are compared by value equality — if a finding's crate, function,
 /// call text, and category all match, it's considered the same finding across runs.
 /// This means code movement (same call, different line) won't trigger a diff.
-#[derive(Serialize, Deserialize, Clone, Hash, Eq, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct BaselineEntry {
     /// Name of the crate containing the finding.
     pub crate_name: String,
@@ -35,6 +35,28 @@ pub struct BaselineEntry {
     pub call_text: String,
     /// Category label (e.g., `"FS"`, `"NET"`).
     pub category: String,
+}
+
+impl PartialEq for BaselineEntry {
+    fn eq(&self, other: &Self) -> bool {
+        self.crate_name == other.crate_name
+            && self.file == other.file
+            && self.function == other.function
+            && self.call_text == other.call_text
+            && self.category == other.category
+    }
+}
+
+impl Eq for BaselineEntry {}
+
+impl std::hash::Hash for BaselineEntry {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.crate_name.hash(state);
+        self.file.hash(state);
+        self.function.hash(state);
+        self.call_text.hash(state);
+        self.category.hash(state);
+    }
 }
 
 impl From<&Finding> for BaselineEntry {
@@ -178,6 +200,30 @@ mod tests {
         let result = diff(&[], &baseline);
         assert_eq!(result.removed_findings.len(), 1);
         assert_eq!(result.new_findings.len(), 0);
+    }
+
+    #[test]
+    fn version_bump_does_not_cause_spurious_diff() {
+        let mut finding_v1 = make_finding("std::fs::read", Category::Fs);
+        finding_v1.crate_version = "0.1.0".to_string();
+        let baseline: HashSet<BaselineEntry> =
+            [BaselineEntry::from(&finding_v1)].into_iter().collect();
+
+        let mut finding_v2 = make_finding("std::fs::read", Category::Fs);
+        finding_v2.crate_version = "0.2.0".to_string();
+        let result = diff(&[finding_v2], &baseline);
+
+        assert_eq!(
+            result.new_findings.len(),
+            0,
+            "version bump should not create new findings"
+        );
+        assert_eq!(
+            result.removed_findings.len(),
+            0,
+            "version bump should not remove findings"
+        );
+        assert_eq!(result.unchanged_count, 1);
     }
 
     #[test]
