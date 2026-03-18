@@ -8,6 +8,9 @@ This is the facade crate — it re-exports everything from `capsec-core`, `capse
 
 ```bash
 cargo add capsec
+
+# Or from source:
+cargo install --path crates/capsec
 ```
 
 ## Quick start

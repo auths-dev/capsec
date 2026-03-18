@@ -26,6 +26,9 @@ Scans Rust source for ambient authority (filesystem, network, env, process) and 
 
 ```bash
 cargo install cargo-capsec
+
+# Or from source:
+cargo install --path crates/cargo-capsec
 ```
 
 ### Run
