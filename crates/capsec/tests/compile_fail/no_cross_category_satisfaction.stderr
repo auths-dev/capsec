@@ -1,0 +1,25 @@
+error[E0277]: the trait bound `Cap<capsec::FsAll>: capsec::Has<capsec::NetConnect>` is not satisfied
+  --> tests/compile_fail/no_cross_category_satisfaction.rs:10:15
+   |
+10 |     needs_net(&fs_all);
+   |     --------- ^^^^^^^ the trait `capsec::Has<capsec::NetConnect>` is not implemented for `Cap<capsec::FsAll>`
+   |     |
+   |     required by a bound introduced by this call
+   |
+help: the following other types implement trait `capsec::Has<P>`
+  --> $WORKSPACE/crates/capsec-core/src/has.rs
+   |
+   |             impl Has<$sub> for Cap<$super> {
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |             |
+   |             `Cap<capsec::FsAll>` implements `capsec::Has<FsRead>`
+   |             `Cap<capsec::FsAll>` implements `capsec::Has<FsWrite>`
+...
+   | impl_subsumes!(FsAll => FsRead, FsWrite);
+   | ---------------------------------------- in this macro invocation
+note: required by a bound in `needs_net`
+  --> tests/compile_fail/no_cross_category_satisfaction.rs:5:23
+   |
+ 5 | fn needs_net(_: &impl Has<NetConnect>) {}
+   |                       ^^^^^^^^^^^^^^^ required by this bound in `needs_net`
+   = note: this error originates in the macro `impl_subsumes` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -1,0 +1,26 @@
+error[E0277]: the trait bound `Cap<capsec::NetConnect>: Has<FsRead>` is not satisfied
+ --> tests/compile_fail/capsec_std_wrong_cap.rs:8:55
+  |
+8 |     let _ = capsec::fs::read_to_string("/etc/passwd", &net_cap);
+  |             --------------------------                ^^^^^^^^ the trait `Has<FsRead>` is not implemented for `Cap<capsec::NetConnect>`
+  |             |
+  |             required by a bound introduced by this call
+  |
+  = help: the following other types implement trait `Has<P>`:
+            `Cap<Ambient>` implements `Has<EnvRead>`
+            `Cap<Ambient>` implements `Has<EnvWrite>`
+            `Cap<Ambient>` implements `Has<FsAll>`
+            `Cap<Ambient>` implements `Has<FsRead>`
+            `Cap<Ambient>` implements `Has<FsWrite>`
+            `Cap<Ambient>` implements `Has<NetAll>`
+            `Cap<Ambient>` implements `Has<NetBind>`
+            `Cap<Ambient>` implements `Has<Spawn>`
+          and $N others
+note: required by a bound in `capsec::fs::read_to_string`
+ --> $WORKSPACE/crates/capsec-std/src/fs.rs
+  |
+  | pub fn read_to_string(
+  |        -------------- required by a bound in this function
+  |     path: impl AsRef<Path>,
+  |     _cap: &impl Has<FsRead>,
+  |                 ^^^^^^^^^^^ required by this bound in `read_to_string`

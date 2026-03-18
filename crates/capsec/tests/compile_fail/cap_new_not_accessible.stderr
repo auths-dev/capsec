@@ -1,0 +1,10 @@
+error[E0624]: associated function `new` is private
+ --> tests/compile_fail/cap_new_not_accessible.rs:6:31
+  |
+6 |     let _cap = Cap::<FsRead>::new();
+  |                               ^^^ private associated function
+  |
+ ::: $WORKSPACE/crates/capsec-core/src/cap.rs
+  |
+  |     pub(crate) fn new() -> Self {
+  |     --------------------------- private associated function defined here

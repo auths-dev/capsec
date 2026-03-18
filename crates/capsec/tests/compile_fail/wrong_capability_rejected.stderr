@@ -1,0 +1,23 @@
+error[E0277]: the trait bound `Cap<capsec::FsRead>: capsec::Has<capsec::NetConnect>` is not satisfied
+  --> tests/compile_fail/wrong_capability_rejected.rs:10:15
+   |
+10 |     needs_net(&fs_cap);
+   |     --------- ^^^^^^^ the trait `capsec::Has<capsec::NetConnect>` is not implemented for `Cap<capsec::FsRead>`
+   |     |
+   |     required by a bound introduced by this call
+   |
+   = help: the following other types implement trait `capsec::Has<P>`:
+             `Cap<Ambient>` implements `capsec::Has<EnvRead>`
+             `Cap<Ambient>` implements `capsec::Has<EnvWrite>`
+             `Cap<Ambient>` implements `capsec::Has<FsAll>`
+             `Cap<Ambient>` implements `capsec::Has<FsWrite>`
+             `Cap<Ambient>` implements `capsec::Has<NetAll>`
+             `Cap<Ambient>` implements `capsec::Has<NetBind>`
+             `Cap<Ambient>` implements `capsec::Has<Spawn>`
+             `Cap<Ambient>` implements `capsec::Has<capsec::FsRead>`
+           and $N others
+note: required by a bound in `needs_net`
+  --> tests/compile_fail/wrong_capability_rejected.rs:5:23
+   |
+ 5 | fn needs_net(_: &impl Has<NetConnect>) {}
+   |                       ^^^^^^^^^^^^^^^ required by this bound in `needs_net`
