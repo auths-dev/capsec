@@ -130,14 +130,21 @@ impl Detector {
         crate_version: &str,
     ) -> Vec<Finding> {
         let mut findings = Vec::new();
-        let import_map = build_import_map(&file.use_imports);
+        let (import_map, glob_prefixes) = build_import_map(&file.use_imports);
 
         for func in &file.functions {
             // Expand all calls upfront for context lookups
             let expanded_calls: Vec<Vec<String>> = func
                 .calls
                 .iter()
-                .map(|call| expand_call(&call.segments, &import_map))
+                .map(|call| {
+                    expand_call(
+                        &call.segments,
+                        &import_map,
+                        &glob_prefixes,
+                        &self.authorities,
+                    )
+                })
                 .collect();
 
             // Pass 1: collect path-based findings and build a set of matched patterns.
@@ -277,29 +284,61 @@ fn make_finding(
     }
 }
 
-fn build_import_map(imports: &[ImportPath]) -> Vec<(String, Vec<String>)> {
-    imports
-        .iter()
-        .map(|imp| {
+type ImportMap = Vec<(String, Vec<String>)>;
+type GlobPrefixes = Vec<Vec<String>>;
+
+fn build_import_map(imports: &[ImportPath]) -> (ImportMap, GlobPrefixes) {
+    let mut map = Vec::new();
+    let mut glob_prefixes = Vec::new();
+
+    for imp in imports {
+        if imp.segments.last().map(|s| s.as_str()) == Some("*") {
+            // Glob import: store the prefix (everything before "*")
+            glob_prefixes.push(imp.segments[..imp.segments.len() - 1].to_vec());
+        } else {
             let short_name = imp
                 .alias
                 .clone()
                 .unwrap_or_else(|| imp.segments.last().cloned().unwrap_or_default());
-            (short_name, imp.segments.clone())
-        })
-        .collect()
+            map.push((short_name, imp.segments.clone()));
+        }
+    }
+
+    (map, glob_prefixes)
 }
 
-fn expand_call(segments: &[String], import_map: &[(String, Vec<String>)]) -> Vec<String> {
+fn expand_call(
+    segments: &[String],
+    import_map: &[(String, Vec<String>)],
+    glob_prefixes: &[Vec<String>],
+    authorities: &[Authority],
+) -> Vec<String> {
     if segments.is_empty() {
         return Vec::new();
     }
 
+    // First: try explicit import expansion (takes priority per RFC 1560)
     for (short_name, full_path) in import_map {
         if segments[0] == *short_name {
             let mut expanded = full_path.clone();
             expanded.extend_from_slice(&segments[1..]);
             return expanded;
+        }
+    }
+
+    // Fallback: try glob import expansion for single-segment bare calls
+    if segments.len() == 1 {
+        for prefix in glob_prefixes {
+            let mut candidate = prefix.clone();
+            candidate.push(segments[0].clone());
+            // Only expand if the candidate matches a known authority pattern
+            for authority in authorities {
+                if let AuthorityPattern::Path(pattern) = &authority.pattern
+                    && matches_path(&candidate, pattern)
+                {
+                    return candidate;
+                }
+            }
         }
     }
 
