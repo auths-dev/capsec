@@ -6,3 +6,4 @@ concat_files.py
 
 .flow
 docs/plans/
+.DS_Store

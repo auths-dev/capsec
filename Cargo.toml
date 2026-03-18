@@ -6,6 +6,7 @@ members = [
     "crates/capsec-std",
     "crates/capsec",
     "crates/cargo-capsec",
+    "crates/capsec-tests",
 ]
 
 [workspace.package]

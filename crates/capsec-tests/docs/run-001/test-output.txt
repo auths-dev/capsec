@@ -1,0 +1,156 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.03s
+     Running unittests src/lib.rs (target/debug/deps/capsec_tests-57e44cbb75355878)
+
+running 0 tests
+
+successes:
+
+successes:
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/audit_evasion.rs (target/debug/deps/audit_evasion-e2f64e1c9ef94b61)
+
+running 28 tests
+test detection_env_var ... ok
+test detection_file_open ... ok
+test detection_reqwest_get ... ok
+test detection_remove_dir_all ... ok
+test detection_tcp_connect ... ok
+test detection_command_new ... ok
+test detection_fully_qualified_no_import ... ok
+test detection_extern_block ... ok
+test detection_std_fs_write ... ok
+test detection_std_fs_read ... ok
+test detection_tokio_fs_in_async_block ... ok
+test evasion_cfg_conditional ... ok
+test evasion_dependency_reexport ... ok
+test evasion_closure_hides_import_context ... ok
+test evasion_closure_with_bare_import ... ok
+test evasion_glob_import ... ok
+test evasion_include_directive ... ok
+test evasion_glob_import_nested_not_evaded ... ok
+test evasion_inline_assembly ... ok
+test evasion_glob_import_env_bare_call ... ok
+test evasion_libc_without_extern_block ... ok
+test evasion_function_pointer ... ok
+test evasion_method_chain_without_context ... ok
+test evasion_module_reexport ... ok
+test evasion_nix_crate ... ok
+test evasion_type_alias_renaming ... ok
+test evasion_trait_write_on_file ... ok
+test evasion_trait_read_on_file ... ok
+
+successes:
+
+successes:
+    detection_command_new
+    detection_env_var
+    detection_extern_block
+    detection_file_open
+    detection_fully_qualified_no_import
+    detection_remove_dir_all
+    detection_reqwest_get
+    detection_std_fs_read
+    detection_std_fs_write
+    detection_tcp_connect
+    detection_tokio_fs_in_async_block
+    evasion_cfg_conditional
+    evasion_closure_hides_import_context
+    evasion_closure_with_bare_import
+    evasion_dependency_reexport
+    evasion_function_pointer
+    evasion_glob_import
+    evasion_glob_import_env_bare_call
+    evasion_glob_import_nested_not_evaded
+    evasion_include_directive
+    evasion_inline_assembly
+    evasion_libc_without_extern_block
+    evasion_method_chain_without_context
+    evasion_module_reexport
+    evasion_nix_crate
+    evasion_trait_read_on_file
+    evasion_trait_write_on_file
+    evasion_type_alias_renaming
+
+test result: ok. 28 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/scope_escapes.rs (target/debug/deps/scope_escapes-1e3458ee909f7aad)
+
+running 11 tests
+test hostscope_allows_port_suffix ... ok
+test hostscope_allows_path_suffix ... ok
+test dirscope_allows_valid_subpath ... ok
+test dirscope_fails_for_nonexistent_path ... ok
+test dirscope_rejects_nonexistent_root ... ok
+test dirscope_blocks_dotdot_traversal ... ok
+test dirscope_blocks_absolute_escape ... ok
+test hostscope_empty_allowlist ... ok
+test hostscope_empty_target_rejected ... ok
+test hostscope_prefix_collision_attack ... ok
+test hostscope_rejects_different_host ... ok
+
+successes:
+
+successes:
+    dirscope_allows_valid_subpath
+    dirscope_blocks_absolute_escape
+    dirscope_blocks_dotdot_traversal
+    dirscope_fails_for_nonexistent_path
+    dirscope_rejects_nonexistent_root
+    hostscope_allows_path_suffix
+    hostscope_allows_port_suffix
+    hostscope_empty_allowlist
+    hostscope_empty_target_rejected
+    hostscope_prefix_collision_attack
+    hostscope_rejects_different_host
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/type_system.rs (target/debug/deps/type_system-ec20db0f09391c7a)
+
+running 14 tests
+test forgery_works_with_capsec_std_env_var ... ok
+test clone_does_not_escalate ... ok
+test has_forgery_via_loop_divergence ... ok
+test forgery_works_with_capsec_std_fs_read ... ok
+test forgery_works_with_capsec_std_read_to_string ... ok
+test god_forgery_satisfies_all_permissions ... ok
+test has_forgery_via_panic_divergence ... ok
+test maybe_uninit_forgery_works_with_unsafe ... ok
+test has_forgery_via_process_exit ... ok
+test no_cross_category_leak ... ok
+test ptr_read_forgery_works_with_unsafe ... ok
+test send_cap_preserves_permission_type ... ok
+test subsumption_only_goes_one_way ... ok
+test transmute_forgery_works_with_unsafe ... ok
+
+successes:
+
+successes:
+    clone_does_not_escalate
+    forgery_works_with_capsec_std_env_var
+    forgery_works_with_capsec_std_fs_read
+    forgery_works_with_capsec_std_read_to_string
+    god_forgery_satisfies_all_permissions
+    has_forgery_via_loop_divergence
+    has_forgery_via_panic_divergence
+    has_forgery_via_process_exit
+    maybe_uninit_forgery_works_with_unsafe
+    no_cross_category_leak
+    ptr_read_forgery_works_with_unsafe
+    send_cap_preserves_permission_type
+    subsumption_only_goes_one_way
+    transmute_forgery_works_with_unsafe
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests capsec_tests
+
+running 0 tests
+
+successes:
+
+successes:
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

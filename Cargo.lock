@@ -117,6 +117,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "capsec-tests"
+version = "0.1.0"
+dependencies = [
+ "capsec",
+ "capsec-core",
+ "capsec-macro",
+ "capsec-std",
+ "cargo-capsec",
+ "trybuild",
+]
+
+[[package]]
 name = "cargo-capsec"
 version = "0.1.0"
 dependencies = [

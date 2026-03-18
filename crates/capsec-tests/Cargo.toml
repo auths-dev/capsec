@@ -1,0 +1,16 @@
+[package]
+name = "capsec-tests"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Adversarial security tests for capsec"
+
+[dependencies]
+capsec-core = { path = "../capsec-core", features = ["test-support"] }
+capsec-std = { path = "../capsec-std" }
+capsec-macro = { path = "../capsec-macro" }
+capsec = { path = "../capsec", features = ["test-support"] }
+cargo-capsec = { path = "../cargo-capsec" }
+
+[dev-dependencies]
+trybuild = "1"
