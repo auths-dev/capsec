@@ -51,7 +51,9 @@ docs/
 
 ### audit_evasion.rs (28 tests)
 
-Confirmed evasions: glob imports, function pointers, `include!()`, inline assembly, module re-exports, dependency re-exports, libc/nix calls.
+Confirmed evasions: function pointers, `include!()`, inline assembly, module re-exports, dependency re-exports, libc/nix calls.
+
+Fixed evasions: glob imports (`use std::fs::*; read(...)` now detected).
 
 Detection positive controls: `std::fs`, `File::open`, `TcpStream::connect`, `Command::new`, `env::var`, `extern` blocks, tokio, reqwest, aliased imports, closures, cfg-gated code.
 

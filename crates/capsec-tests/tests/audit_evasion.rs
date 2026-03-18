@@ -32,15 +32,16 @@ fn evasion_glob_import() {
             let _ = read("secret.txt");
         }
     "#;
-    // The parser captures glob as ("*", ["std", "fs", "*"]).
-    // expand_call sees first segment "read", tries to match against import
-    // short names. The glob entry has short_name "*", which doesn't match "read".
-    // So the call stays as ["read"], which doesn't suffix-match any pattern.
-    let is_evaded = evades(source);
+    // Glob-aware fallback in expand_call now expands bare `read` against
+    // glob prefix ["std", "fs"], producing ["std", "fs", "read"] which
+    // matches the authority pattern.
     assert!(
-        is_evaded,
-        "BUG: glob import `use std::fs::*` should evade detection but was caught. \
-         If this test fails, the glob evasion has been FIXED (good!)."
+        !evades(source),
+        "glob import `use std::fs::*; read(...)` should be detected"
+    );
+    assert!(
+        count_findings(source) >= 1,
+        "Expected at least 1 finding for glob-imported fs::read"
     );
 }
 
@@ -70,12 +71,34 @@ fn evasion_glob_import_env_bare_call() {
             let _ = var("SECRET_KEY");
         }
     "#;
-    // `var` is a bare call. Glob import gives short_name "*" which doesn't
-    // match "var". So the call stays as ["var"], not matching any pattern.
-    let is_evaded = evades(source);
+    // Glob-aware fallback expands bare `var` against glob prefix ["std", "env"],
+    // producing ["std", "env", "var"] which matches the authority pattern.
     assert!(
-        is_evaded,
-        "BUG: glob import `use std::env::*; var(...)` evades detection"
+        !evades(source),
+        "glob import `use std::env::*; var(...)` should be detected"
+    );
+    assert!(
+        count_findings(source) >= 1,
+        "Expected at least 1 finding for glob-imported env::var"
+    );
+}
+
+#[test]
+fn glob_import_no_false_positive_collections() {
+    let source = r#"
+        use std::collections::*;
+        fn innocent() {
+            let _m = HashMap::new();
+        }
+    "#;
+    // std::collections::* brings HashMap into scope, but HashMap::new() is a
+    // two-segment path call — not a bare single-segment call. The glob fallback
+    // only fires for single-segment calls, and "HashMap::new" doesn't match any
+    // authority pattern regardless.
+    assert_eq!(
+        count_findings(source),
+        0,
+        "std::collections::* glob should not produce false positives"
     );
 }
 
