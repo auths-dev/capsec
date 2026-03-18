@@ -1,0 +1,51 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: [--unsafe]
+      - id: check-toml
+
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.4
+    hooks:
+      - id: actionlint
+
+  - repo: local
+    hooks:
+      # ── Fast gates (commit) ────────────────────────────────────────
+      # Run on every `git commit`. Should take < 5 seconds incrementally.
+
+      - id: cargo-fmt
+        name: cargo fmt
+        entry: cargo fmt --all
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      - id: cargo-clippy
+        name: cargo clippy
+        entry: cargo clippy --workspace -- -D warnings
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      - id: capsec-audit
+        name: capsec audit
+        entry: cargo run -p cargo-capsec -- capsec audit --fail-on high --quiet
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      # ── Slow gates (push only) ─────────────────────────────────────
+      # Run on `git push`. Full test suite.
+
+      - id: cargo-test
+        name: cargo test
+        entry: cargo test --workspace
+        language: system
+        types: [rust]
+        pass_filenames: false
+        stages: [pre-push]
