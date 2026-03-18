@@ -4,8 +4,8 @@
 //!
 //! Provides two attribute macros:
 //!
-//! - [`requires`] — declares a function's capability requirements and emits
-//!   compile-time trait bound assertions.
+//! - [`requires`] — declares a function's capability requirements for tooling
+//!   and documentation.
 //! - [`deny`] — marks a function as capability-free for the lint tool.
 //!
 //! These macros are re-exported by the `capsec` facade crate. You don't need to
@@ -20,9 +20,10 @@ use syn::{ItemFn, Meta, Token, parse_macro_input};
 
 /// Declares the capability requirements of a function.
 ///
-/// Adds a `#[doc]` attribute for the lint tool and emits compile-time metadata.
-/// The actual enforcement comes from the `Has<P>` trait bounds on the function's
-/// capability parameter — this macro documents the intent and enables tooling.
+/// Adds a `#[doc]` attribute for the lint tool. This macro does **not** emit
+/// compile-time trait bound assertions — actual enforcement comes from the
+/// `Has<P>` trait bounds on the function's capability parameter. The macro
+/// documents the intent and enables tooling.
 ///
 /// # Usage
 ///

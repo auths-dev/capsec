@@ -83,6 +83,10 @@ impl_subsumes!(FsAll => FsRead, FsWrite);
 impl_subsumes!(NetAll => NetConnect, NetBind);
 
 //  Ambient: satisfies everything
+//
+// Cannot use a blanket `impl<P> Has<P> for Cap<Ambient> where Ambient: Subsumes<P>`
+// because it conflicts with the direct `impl<P> Has<P> for Cap<P>` when P = Ambient.
+// Enumerated via macro to stay in sync with the permission set.
 
 macro_rules! impl_ambient {
     ($($perm:ty),+) => {

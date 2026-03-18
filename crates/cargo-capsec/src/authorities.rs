@@ -25,6 +25,7 @@ use serde::Serialize;
 /// | `Process` | Subprocess spawning (`Command::new`) | Magenta |
 /// | `Ffi` | Foreign function interface (`extern` blocks) | Cyan |
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
+#[non_exhaustive]
 pub enum Category {
     /// Filesystem access: reads, writes, deletes, directory operations.
     Fs,
@@ -65,6 +66,7 @@ impl Category {
 /// | `High` | Can write, delete, or open network connections | `fs::write`, `TcpStream::connect` |
 /// | `Critical` | Can destroy data or execute arbitrary code | `remove_dir_all`, `Command::new` |
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[non_exhaustive]
 pub enum Risk {
     /// Read-only metadata or low-impact queries.
     Low,

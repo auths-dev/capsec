@@ -24,6 +24,14 @@ pub fn vars(_cap: &impl Has<EnvRead>) -> std::env::Vars {
 ///
 /// In Rust edition 2024, `std::env::set_var` is `unsafe` because it's not
 /// thread-safe. This wrapper encapsulates that unsafety.
+///
+/// # Thread safety
+///
+/// `std::env::set_var` is not thread-safe. Even though `Cap<EnvWrite>` can be
+/// cloned and transferred across threads via `make_send()`, calling this
+/// function concurrently from multiple threads is undefined behavior. The
+/// capability system tracks *permission*, not *exclusivity* — synchronization
+/// is the caller's responsibility.
 pub fn set_var(
     key: impl AsRef<std::ffi::OsStr>,
     value: impl AsRef<std::ffi::OsStr>,
