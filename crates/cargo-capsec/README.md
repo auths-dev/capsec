@@ -1,0 +1,94 @@
+# capsec-cli
+
+Static capability audit for Rust — find out what your code can do to the outside world.
+
+## What it does
+
+`capsec-cli` scans Rust source code and reports every function that exercises ambient authority: filesystem access, network connections, environment variable reads, process spawning. Point it at a workspace and it tells you what's happening — no annotations or code changes required.
+
+## Installation
+
+From crates.io:
+
+```bash
+cargo install cargo-capsec
+```
+
+From source:
+
+```bash
+cargo install --path crates/cargo-capsec
+```
+
+## Quick start
+
+```bash
+# Audit your workspace
+cargo capsec audit
+
+# JSON output for CI
+cargo capsec audit --format json
+
+# Only show high-risk and critical findings
+cargo capsec audit --min-risk high
+
+# Fail CI if any critical findings
+cargo capsec audit --fail-on critical
+
+# Save baseline, then diff on next run
+cargo capsec audit --baseline
+cargo capsec audit --diff
+
+# SARIF output for GitHub Code Scanning
+cargo capsec audit --format sarif > capsec.sarif
+```
+
+## Output example
+
+```
+my-app v0.1.0
+─────────────
+  FS    src/main.rs:8:5      fs::read_to_string     main()
+  FS    src/main.rs:22:9     fs::write              save_output()
+  NET   src/api.rs:15:9      TcpStream::connect     fetch_data()
+  ENV   src/config.rs:3:5    env::var               load_config()
+
+Summary
+───────
+  Crates with findings: 1
+  Total findings:       4
+  Categories:           FS: 2  NET: 1  ENV: 1  PROC: 0
+```
+
+## Configuration
+
+Create `.capsec.toml` in your workspace root:
+
+```toml
+[analysis]
+exclude = ["tests/**", "benches/**"]
+
+# Custom authority patterns
+[[authority]]
+path = ["my_crate", "secrets", "fetch"]
+category = "net"
+risk = "critical"
+description = "Fetches secrets from vault"
+
+# Suppress known-good findings
+[[allow]]
+crate = "tracing"
+reason = "Logging framework, reviewed"
+```
+
+## Limitations
+
+- **Use aliases**: `use std::fs::read as r; r(...)` — the import is flagged, but the bare aliased call may not be detected in all cases.
+- **Method call matching is heuristic**: `.connect()` is flagged regardless of receiver type. May produce false positives.
+- **Proc macro generated code** is not visible to the analysis.
+- **No data flow analysis**: Dead code will be flagged.
+- **FFI**: `extern` blocks are detected but individual libc calls aren't categorized.
+
+## License
+
+MIT OR Apache-2.0
