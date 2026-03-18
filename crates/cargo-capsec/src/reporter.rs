@@ -59,15 +59,30 @@ fn colorize_category(cat: &Category) -> colored::ColoredString {
 }
 
 fn print_summary(findings: &[Finding], by_crate: &BTreeMap<String, Vec<&Finding>>) {
-    let fs_count = findings.iter().filter(|f| f.category == Category::Fs).count();
-    let net_count = findings.iter().filter(|f| f.category == Category::Net).count();
-    let env_count = findings.iter().filter(|f| f.category == Category::Env).count();
-    let proc_count = findings.iter().filter(|f| f.category == Category::Process).count();
-    let ffi_count = findings.iter().filter(|f| f.category == Category::Ffi).count();
+    let fs_count = findings
+        .iter()
+        .filter(|f| f.category == Category::Fs)
+        .count();
+    let net_count = findings
+        .iter()
+        .filter(|f| f.category == Category::Net)
+        .count();
+    let env_count = findings
+        .iter()
+        .filter(|f| f.category == Category::Env)
+        .count();
+    let proc_count = findings
+        .iter()
+        .filter(|f| f.category == Category::Process)
+        .count();
+    let ffi_count = findings
+        .iter()
+        .filter(|f| f.category == Category::Ffi)
+        .count();
 
     println!();
     println!("{}", "Summary".bold());
-    println!("{}", "───────");
+    println!("───────");
     println!("  Crates with findings: {}", by_crate.len());
     println!("  Total findings:       {}", findings.len());
     println!(
@@ -89,14 +104,11 @@ fn print_summary(findings: &[Finding], by_crate: &BTreeMap<String, Vec<&Finding>
         );
     }
     if high > 0 {
-        println!(
-            "  {} high-risk findings",
-            format!("{high}").yellow().bold()
-        );
+        println!("  {} high-risk findings", format!("{high}").yellow().bold());
     }
 }
 
-fn group_by_crate<'a>(findings: &'a [Finding]) -> BTreeMap<String, Vec<&'a Finding>> {
+fn group_by_crate(findings: &[Finding]) -> BTreeMap<String, Vec<&Finding>> {
     let mut by_crate: BTreeMap<String, Vec<&Finding>> = BTreeMap::new();
     for f in findings {
         let key = format!("{} v{}", f.crate_name, f.crate_version);

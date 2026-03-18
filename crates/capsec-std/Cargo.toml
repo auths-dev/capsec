@@ -1,0 +1,12 @@
+[package]
+name = "capsec-std"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Capability-gated wrappers around std::fs, std::net, std::env, and std::process"
+keywords = ["security", "capability", "std", "least-privilege"]
+categories = ["rust-patterns"]
+
+[dependencies]
+capsec-core.workspace = true

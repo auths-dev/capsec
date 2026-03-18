@@ -82,29 +82,28 @@ pub struct AllowEntry {
     pub function: Option<String>,
 }
 
-
 impl AllowEntry {
     /// Returns the crate name from either `crate` or `crate_name` key.
     pub fn effective_crate(&self) -> Option<&str> {
-        self.crate_name
-            .as_deref()
-            .or(self.crate_key.as_deref())
+        self.crate_name.as_deref().or(self.crate_key.as_deref())
     }
 }
-
 
 /// Loads configuration from `.capsec.toml` in the given workspace root.
 ///
 /// Returns [`Config::default()`] if the file doesn't exist. Returns an error
 /// if the file exists but contains invalid TOML.
-pub fn load_config(workspace_root: &Path) -> Result<Config, String> {
+pub fn load_config(
+    workspace_root: &Path,
+    cap: &impl capsec_core::has::Has<capsec_core::permission::FsRead>,
+) -> Result<Config, String> {
     let config_path = workspace_root.join(CONFIG_FILE);
 
     if !config_path.exists() {
         return Ok(Config::default());
     }
 
-    let content = std::fs::read_to_string(&config_path)
+    let content = capsec_std::fs::read_to_string(&config_path, cap)
         .map_err(|e| format!("Failed to read {}: {e}", config_path.display()))?;
 
     let config: Config = toml::from_str(&content)
@@ -129,7 +128,7 @@ pub fn custom_authorities(config: &Config) -> Vec<CustomAuthority> {
                 "ffi" => Category::Ffi,
                 _ => Category::Ffi,
             },
-            risk: Risk::from_str(&entry.risk),
+            risk: Risk::parse(&entry.risk),
             description: entry.description.clone(),
         })
         .collect()
@@ -195,21 +194,32 @@ mod tests {
         let config: Config = toml::from_str(toml).unwrap();
         assert_eq!(config.analysis.exclude.len(), 2);
         assert_eq!(config.authority.len(), 1);
-        assert_eq!(config.authority[0].path, vec!["my_crate", "secrets", "fetch"]);
+        assert_eq!(
+            config.authority[0].path,
+            vec!["my_crate", "secrets", "fetch"]
+        );
         assert_eq!(config.allow.len(), 1);
         assert_eq!(config.allow[0].effective_crate(), Some("tracing"));
     }
 
     #[test]
     fn missing_config_returns_default() {
-        let config = load_config(Path::new("/nonexistent/path")).unwrap();
+        let root = capsec_core::root::test_root();
+        let cap = root.grant::<capsec_core::permission::FsRead>();
+        let config = load_config(Path::new("/nonexistent/path"), &cap).unwrap();
         assert!(config.authority.is_empty());
         assert!(config.allow.is_empty());
     }
 
     #[test]
     fn exclude_pattern_matching() {
-        assert!(should_exclude(Path::new("tests/integration.rs"), &["tests/**".to_string()]));
-        assert!(!should_exclude(Path::new("src/main.rs"), &["tests/**".to_string()]));
+        assert!(should_exclude(
+            Path::new("tests/integration.rs"),
+            &["tests/**".to_string()]
+        ));
+        assert!(!should_exclude(
+            Path::new("src/main.rs"),
+            &["tests/**".to_string()]
+        ));
     }
 }

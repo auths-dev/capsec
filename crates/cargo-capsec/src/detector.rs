@@ -16,7 +16,9 @@
 //!
 //! This eliminates false positives from common method names like `.status()` and `.output()`.
 
-use crate::authorities::{Authority, AuthorityPattern, Category, CustomAuthority, Risk, build_registry};
+use crate::authorities::{
+    Authority, AuthorityPattern, Category, CustomAuthority, Risk, build_registry,
+};
 use crate::parser::{CallKind, ImportPath, ParsedFile};
 use serde::Serialize;
 use std::collections::HashSet;
@@ -90,6 +92,12 @@ pub struct Detector {
     custom_paths: Vec<(Vec<String>, Category, Risk, String)>,
 }
 
+impl Default for Detector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Detector {
     /// Creates a new detector with the built-in authority registry.
     pub fn new() -> Self {
@@ -115,7 +123,12 @@ impl Detector {
     ///
     /// Expands call paths using the file's `use` imports, matches against the
     /// authority registry (built-in + custom), and deduplicates by call site.
-    pub fn analyse(&self, file: &ParsedFile, crate_name: &str, crate_version: &str) -> Vec<Finding> {
+    pub fn analyse(
+        &self,
+        file: &ParsedFile,
+        crate_name: &str,
+        crate_version: &str,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
         let import_map = build_import_map(&file.use_imports);
 
@@ -137,14 +150,20 @@ impl Detector {
 
             for (call, expanded) in func.calls.iter().zip(expanded_calls.iter()) {
                 for authority in &self.authorities {
-                    if let AuthorityPattern::Path(pattern) = &authority.pattern {
-                        if matches_path(expanded, pattern) {
-                            matched_paths.insert(pattern.iter().map(|s| s.to_string()).collect());
-                            findings.push(make_finding(
-                                file, func, call, expanded, authority, crate_name, crate_version,
-                            ));
-                            break;
-                        }
+                    if let AuthorityPattern::Path(pattern) = &authority.pattern
+                        && matches_path(expanded, pattern)
+                    {
+                        matched_paths.insert(pattern.iter().map(|s| s.to_string()).collect());
+                        findings.push(make_finding(
+                            file,
+                            func,
+                            call,
+                            expanded,
+                            authority,
+                            crate_name,
+                            crate_version,
+                        ));
+                        break;
                     }
                 }
 
@@ -175,15 +194,25 @@ impl Detector {
             // was found in pass 1 (co-occurrence in same function)
             for (call, expanded) in func.calls.iter().zip(expanded_calls.iter()) {
                 for authority in &self.authorities {
-                    if let AuthorityPattern::MethodWithContext { method, requires_path } = &authority.pattern {
-                        if matches!(call.kind, CallKind::MethodCall { method: ref m } if m == method) {
-                            let required: Vec<String> = requires_path.iter().map(|s| s.to_string()).collect();
-                            if matched_paths.contains(&required) {
-                                findings.push(make_finding(
-                                    file, func, call, expanded, authority, crate_name, crate_version,
-                                ));
-                                break;
-                            }
+                    if let AuthorityPattern::MethodWithContext {
+                        method,
+                        requires_path,
+                    } = &authority.pattern
+                        && matches!(call.kind, CallKind::MethodCall { method: ref m } if m == method)
+                    {
+                        let required: Vec<String> =
+                            requires_path.iter().map(|s| s.to_string()).collect();
+                        if matched_paths.contains(&required) {
+                            findings.push(make_finding(
+                                file,
+                                func,
+                                call,
+                                expanded,
+                                authority,
+                                crate_name,
+                                crate_version,
+                            ));
+                            break;
                         }
                     }
                 }
@@ -215,7 +244,8 @@ impl Detector {
 
         // Fix #5: dedup by (file, function, call_line, call_col)
         let mut seen = HashSet::new();
-        findings.retain(|f| seen.insert((f.file.clone(), f.function.clone(), f.call_line, f.call_col)));
+        findings
+            .retain(|f| seen.insert((f.file.clone(), f.function.clone(), f.call_line, f.call_col)));
 
         findings
     }
@@ -346,9 +376,15 @@ mod tests {
         let parsed = parse_source(source, "test.rs").unwrap();
         let detector = Detector::new();
         let findings = detector.analyse(&parsed, "test-crate", "0.1.0");
-        let proc_findings: Vec<_> = findings.iter().filter(|f| f.category == Category::Process).collect();
+        let proc_findings: Vec<_> = findings
+            .iter()
+            .filter(|f| f.category == Category::Process)
+            .collect();
         // Should find Command::new AND .output() (context satisfied)
-        assert!(proc_findings.len() >= 2, "Expected Command::new + .output(), got {proc_findings:?}");
+        assert!(
+            proc_findings.len() >= 2,
+            "Expected Command::new + .output(), got {proc_findings:?}"
+        );
     }
 
     #[test]
@@ -363,8 +399,14 @@ mod tests {
         let parsed = parse_source(source, "test.rs").unwrap();
         let detector = Detector::new();
         let findings = detector.analyse(&parsed, "test-crate", "0.1.0");
-        let proc_findings: Vec<_> = findings.iter().filter(|f| f.category == Category::Process).collect();
-        assert!(proc_findings.is_empty(), "Should NOT flag .status() without Command::new context");
+        let proc_findings: Vec<_> = findings
+            .iter()
+            .filter(|f| f.category == Category::Process)
+            .collect();
+        assert!(
+            proc_findings.is_empty(),
+            "Should NOT flag .status() without Command::new context"
+        );
     }
 
     #[test]
@@ -426,7 +468,9 @@ mod tests {
         for f in &findings {
             assert!(
                 seen.insert((&f.file, &f.function, f.call_line, f.call_col)),
-                "Duplicate finding at {}:{}", f.call_line, f.call_col
+                "Duplicate finding at {}:{}",
+                f.call_line,
+                f.call_col
             );
         }
     }
@@ -442,7 +486,10 @@ mod tests {
         let parsed = parse_source(source, "test.rs").unwrap();
         let detector = Detector::new();
         let findings = detector.analyse(&parsed, "test-crate", "0.1.0");
-        assert!(!findings.is_empty(), "Should detect aliased import: use std::fs::read as load");
+        assert!(
+            !findings.is_empty(),
+            "Should detect aliased import: use std::fs::read as load"
+        );
         assert_eq!(findings[0].category, Category::Fs);
         assert!(findings[0].call_text.contains("std::fs::read"));
     }
@@ -461,7 +508,10 @@ mod tests {
         let parsed = parse_source(source, "test.rs").unwrap();
         let detector = Detector::new();
         let findings = detector.analyse(&parsed, "test-crate", "0.1.0");
-        assert!(!findings.is_empty(), "Should detect fs::read inside impl block");
+        assert!(
+            !findings.is_empty(),
+            "Should detect fs::read inside impl block"
+        );
         assert_eq!(findings[0].function, "load");
     }
 }

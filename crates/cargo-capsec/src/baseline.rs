@@ -63,18 +63,25 @@ pub struct DiffResult {
 /// Loads a previously saved baseline from `.capsec-baseline.json` in the workspace root.
 ///
 /// Returns `None` if the file doesn't exist or can't be parsed.
-pub fn load_baseline(workspace_root: &Path) -> Option<HashSet<BaselineEntry>> {
+pub fn load_baseline(
+    workspace_root: &Path,
+    cap: &impl capsec_core::has::Has<capsec_core::permission::FsRead>,
+) -> Option<HashSet<BaselineEntry>> {
     let path = workspace_root.join(BASELINE_FILE);
-    let data = std::fs::read_to_string(path).ok()?;
+    let data = capsec_std::fs::read_to_string(path, cap).ok()?;
     serde_json::from_str(&data).ok()
 }
 
 /// Saves current findings as the new baseline to `.capsec-baseline.json`.
-pub fn save_baseline(workspace_root: &Path, findings: &[Finding]) -> Result<(), String> {
+pub fn save_baseline(
+    workspace_root: &Path,
+    findings: &[Finding],
+    cap: &impl capsec_core::has::Has<capsec_core::permission::FsWrite>,
+) -> Result<(), String> {
     let entries: Vec<BaselineEntry> = findings.iter().map(BaselineEntry::from).collect();
     let json = serde_json::to_string_pretty(&entries)
         .map_err(|e| format!("Failed to serialize baseline: {e}"))?;
-    std::fs::write(workspace_root.join(BASELINE_FILE), json)
+    capsec_std::fs::write(workspace_root.join(BASELINE_FILE), json, cap)
         .map_err(|e| format!("Failed to write baseline: {e}"))
 }
 

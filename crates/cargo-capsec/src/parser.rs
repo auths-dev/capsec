@@ -100,11 +100,27 @@ pub struct ExternBlock {
 
 /// Parses a `.rs` file from disk into a [`ParsedFile`].
 ///
-/// Reads the file contents and delegates to [`parse_source`]. Returns an error
-/// string if the file cannot be read or parsed.
-pub fn parse_file(path: &Path) -> Result<ParsedFile, String> {
-    let source =
-        std::fs::read_to_string(path).map_err(|e| format!("Failed to read {}: {e}", path.display()))?;
+/// Requires an [`FsRead`](capsec_core::permission::FsRead) capability token,
+/// proving the caller has permission to read files. This is the dogfood example —
+/// `cargo capsec audit` flagged this function's `std::fs::read_to_string` call,
+/// and now it's gated by the capsec type system.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use capsec_core::root::test_root;
+/// use capsec_core::permission::FsRead;
+///
+/// let root = test_root();
+/// let cap = root.grant::<FsRead>();
+/// let parsed = parse_file(Path::new("src/main.rs"), &cap).unwrap();
+/// ```
+pub fn parse_file(
+    path: &Path,
+    cap: &impl capsec_core::has::Has<capsec_core::permission::FsRead>,
+) -> Result<ParsedFile, String> {
+    let source = capsec_std::fs::read_to_string(path, cap)
+        .map_err(|e| format!("Failed to read {}: {e}", path.display()))?;
     parse_source(&source, &path.display().to_string())
 }
 
@@ -216,8 +232,12 @@ impl<'ast> Visit<'ast> for FileVisitor {
 
     fn visit_expr_path(&mut self, node: &'ast syn::ExprPath) {
         if let Some(ref mut func) = self.current_function {
-            let segments: Vec<String> =
-                node.path.segments.iter().map(|s| s.ident.to_string()).collect();
+            let segments: Vec<String> = node
+                .path
+                .segments
+                .iter()
+                .map(|s| s.ident.to_string())
+                .collect();
 
             if !segments.is_empty() {
                 func.calls.push(CallSite {
@@ -359,7 +379,11 @@ mod tests {
         assert_eq!(read_import.segments, vec!["std", "fs", "read"]);
         assert!(read_import.alias.is_none());
 
-        let alias_import = parsed.use_imports.iter().find(|i| i.alias.is_some()).unwrap();
+        let alias_import = parsed
+            .use_imports
+            .iter()
+            .find(|i| i.alias.is_some())
+            .unwrap();
         assert_eq!(alias_import.segments, vec!["std", "env", "var"]);
         assert_eq!(alias_import.alias.as_deref(), Some("get_env"));
     }

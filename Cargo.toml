@@ -1,6 +1,10 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/capsec-core",
+    "crates/capsec-macro",
+    "crates/capsec-std",
+    "crates/capsec",
     "crates/cargo-capsec",
 ]
 
@@ -11,12 +15,16 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/bordumb/capsec"
 
 [workspace.dependencies]
+# Core
+thiserror = "2"
+
+# Proc macros
+syn = { version = "2", features = ["full", "visit", "parsing", "printing", "extra-traits"] }
+quote = "1"
+proc-macro2 = { version = "1", features = ["span-locations"] }
+
 # CLI
 clap = { version = "4", features = ["derive"] }
-
-# Parsing
-syn = { version = "2", features = ["full", "visit", "parsing", "printing", "extra-traits"] }
-proc-macro2 = { version = "1", features = ["span-locations"] }
 
 # File discovery
 walkdir = "2"
@@ -31,4 +39,10 @@ toml = "1.0.7"
 colored = "3.1.1"
 
 # Testing
+trybuild = "1"
 insta = { version = "1", features = ["yaml"] }
+
+# Internal crates
+capsec-core = { path = "crates/capsec-core", version = "0.1.0" }
+capsec-macro = { path = "crates/capsec-macro", version = "0.1.0" }
+capsec-std = { path = "crates/capsec-std", version = "0.1.0" }
