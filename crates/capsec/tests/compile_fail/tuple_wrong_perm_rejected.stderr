@@ -1,0 +1,33 @@
+error[E0277]: the trait bound `Cap<(capsec::FsRead, capsec::NetConnect)>: capsec::Has<capsec::FsWrite>` is not satisfied
+  --> tests/compile_fail/tuple_wrong_perm_rejected.rs:10:17
+   |
+10 |     needs_write(&cap);
+   |     ----------- ^^^^ the trait `capsec::Has<capsec::FsWrite>` is not implemented for `Cap<(capsec::FsRead, capsec::NetConnect)>`
+   |     |
+   |     required by a bound introduced by this call
+   |
+help: the following other types implement trait `capsec::Has<P>`
+  --> $WORKSPACE/crates/capsec-core/src/has.rs
+   |
+   |               impl Has<$a> for Cap<($a, $b)> {
+   |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Cap<(capsec::FsRead, capsec::NetConnect)>` implements `capsec::Has<capsec::FsRead>`
+...
+   |               impl Has<$rest> for Cap<($first, $rest)> {
+   |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Cap<(capsec::FsRead, capsec::NetConnect)>` implements `capsec::Has<capsec::NetConnect>`
+...
+   | / impl_tuple_has_first!(
+   | |     [FsRead, FsWrite, FsAll, NetConnect, NetBind, NetAll, EnvRead, EnvWrite, Spawn, Ambient];
+   | |     [FsRead, FsWrite, FsAll, NetConnect, NetBind, NetAll, EnvRead, EnvWrite, Spawn, Ambient]
+   | | );
+   | |_- in this macro invocation
+   |
+   | / impl_tuple_has_second!(
+   | |     FsRead, FsWrite, FsAll, NetConnect, NetBind, NetAll, EnvRead, EnvWrite, Spawn, Ambient
+   | | );
+   | |_- in this macro invocation
+note: required by a bound in `needs_write`
+  --> tests/compile_fail/tuple_wrong_perm_rejected.rs:5:25
+   |
+ 5 | fn needs_write(_: &impl Has<FsWrite>) {}
+   |                         ^^^^^^^^^^^^ required by this bound in `needs_write`
+   = note: this error originates in the macro `impl_tuple_has_first` which comes from the expansion of the macro `impl_tuple_has_second` (in Nightly builds, run with -Z macro-backtrace for more info)

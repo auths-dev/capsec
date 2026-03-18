@@ -8,7 +8,17 @@
 //!
 //! # Multiple capabilities
 //!
-//! For functions that need multiple permissions, use multiple parameters:
+//! Bundle permissions in a single token with a tuple:
+//!
+//! ```rust,ignore
+//! fn sync_data(cap: &(impl Has<FsRead> + Has<NetConnect>)) { ... }
+//!
+//! let root = test_root();
+//! let cap = root.grant::<(FsRead, NetConnect)>();
+//! sync_data(&cap);
+//! ```
+//!
+//! Or use separate parameters:
 //!
 //! ```rust,ignore
 //! fn sync_data(fs: &impl Has<FsRead>, net: &impl Has<NetConnect>) { ... }
@@ -49,7 +59,7 @@ pub trait Has<P: Permission> {
     fn cap_ref(&self) -> Cap<P>;
 }
 
-// ── Direct: Cap<P> implements Has<P> ────────────────────────────
+//  Direct: Cap<P> implements Has<P>
 
 impl<P: Permission> Has<P> for Cap<P> {
     fn cap_ref(&self) -> Cap<P> {
@@ -57,7 +67,7 @@ impl<P: Permission> Has<P> for Cap<P> {
     }
 }
 
-// ── Subsumption: FsAll, NetAll ──────────────────────────────────
+//  Subsumption: FsAll, NetAll
 
 macro_rules! impl_subsumes {
     ($super:ty => $($sub:ty),+) => {
@@ -72,7 +82,7 @@ macro_rules! impl_subsumes {
 impl_subsumes!(FsAll => FsRead, FsWrite);
 impl_subsumes!(NetAll => NetConnect, NetBind);
 
-// ── Ambient: satisfies everything ───────────────────────────────
+//  Ambient: satisfies everything
 
 macro_rules! impl_ambient {
     ($($perm:ty),+) => {
@@ -86,6 +96,53 @@ macro_rules! impl_ambient {
 
 impl_ambient!(
     FsRead, FsWrite, FsAll, NetConnect, NetBind, NetAll, EnvRead, EnvWrite, Spawn
+);
+
+//  Tuples: Cap<(A, B)> satisfies Has<A> and Has<B>
+//
+// Because Rust's coherence rules reject overlapping generic impls when A == B,
+// we enumerate all concrete permission pairs via two macros.
+//
+// Macro 1: Has<first_element> for all (A, B) pairs including self-pairs (100 impls).
+// Macro 2: Has<second_element> for distinct pairs only (90 impls).
+//
+// Total: 190 unique impls. No conflicts. No changes to the Has<P> trait signature.
+
+macro_rules! impl_tuple_has_first {
+    ([$($a:ident),+]; $all:tt) => {
+        $( impl_tuple_has_first!(@inner $a; $all); )+
+    };
+    (@inner $a:ident; [$($b:ident),+]) => {
+        $(
+            impl Has<$a> for Cap<($a, $b)> {
+                fn cap_ref(&self) -> Cap<$a> { Cap::new() }
+            }
+        )+
+    };
+}
+
+macro_rules! impl_tuple_has_second {
+    ($first:ident $(, $rest:ident)+) => {
+        $(
+            impl Has<$first> for Cap<($rest, $first)> {
+                fn cap_ref(&self) -> Cap<$first> { Cap::new() }
+            }
+            impl Has<$rest> for Cap<($first, $rest)> {
+                fn cap_ref(&self) -> Cap<$rest> { Cap::new() }
+            }
+        )+
+        impl_tuple_has_second!($($rest),+);
+    };
+    ($single:ident) => {};
+}
+
+impl_tuple_has_first!(
+    [FsRead, FsWrite, FsAll, NetConnect, NetBind, NetAll, EnvRead, EnvWrite, Spawn, Ambient];
+    [FsRead, FsWrite, FsAll, NetConnect, NetBind, NetAll, EnvRead, EnvWrite, Spawn, Ambient]
+);
+
+impl_tuple_has_second!(
+    FsRead, FsWrite, FsAll, NetConnect, NetBind, NetAll, EnvRead, EnvWrite, Spawn, Ambient
 );
 
 #[cfg(test)]
@@ -140,5 +197,47 @@ mod tests {
         let fs = root.grant::<FsRead>();
         let net = root.grant::<NetConnect>();
         sync_data(&fs, &net);
+    }
+
+    #[test]
+    fn tuple_cap_satisfies_both_has() {
+        let root = test_root();
+        let cap = root.grant::<(FsRead, NetConnect)>();
+        fn needs_fs(_: &impl Has<FsRead>) {}
+        fn needs_net(_: &impl Has<NetConnect>) {}
+        needs_fs(&cap);
+        needs_net(&cap);
+    }
+
+    #[test]
+    fn tuple_self_pair() {
+        let root = test_root();
+        let cap = root.grant::<(FsRead, FsRead)>();
+        fn needs_fs(_: &impl Has<FsRead>) {}
+        needs_fs(&cap);
+    }
+
+    #[test]
+    fn tuple_with_subsumption_type() {
+        let root = test_root();
+        let cap = root.grant::<(FsAll, NetConnect)>();
+        fn needs_fs_all(_: &impl Has<FsAll>) {}
+        fn needs_net(_: &impl Has<NetConnect>) {}
+        needs_fs_all(&cap);
+        needs_net(&cap);
+    }
+
+    #[test]
+    fn tuple_cap_ref_returns_correct_type() {
+        let root = test_root();
+        let cap = root.grant::<(FsRead, NetConnect)>();
+        let _fs: Cap<FsRead> = Has::<FsRead>::cap_ref(&cap);
+        let _net: Cap<NetConnect> = Has::<NetConnect>::cap_ref(&cap);
+    }
+
+    #[test]
+    fn tuple_is_zst() {
+        use std::mem::size_of;
+        assert_eq!(size_of::<Cap<(FsRead, NetConnect)>>(), 0);
     }
 }

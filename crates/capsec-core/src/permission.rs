@@ -19,6 +19,13 @@
 //! | [`Spawn`] | Process | Execute subprocesses |
 //! | [`Ambient`] | Everything | Full ambient authority — the "god token" |
 //!
+//! # Tuples
+//!
+//! Two permissions can be bundled via a tuple: `(FsRead, NetConnect)` is itself
+//! a `Permission`, and `Cap<(FsRead, NetConnect)>` satisfies both `Has<FsRead>`
+//! and `Has<NetConnect>`. All 2-tuple combinations of built-in permissions are
+//! supported.
+//!
 //! # Subsumption
 //!
 //! Some permissions imply others. [`FsAll`] subsumes both [`FsRead`] and [`FsWrite`],
@@ -32,7 +39,7 @@
 /// can be used as capability tokens — external crates cannot forge new permissions.
 pub trait Permission: sealed::Sealed + 'static {}
 
-// ── Filesystem ──────────────────────────────────────────────────
+//  Filesystem
 
 /// Permission to read files, list directories, and check metadata.
 pub struct FsRead;
@@ -43,7 +50,7 @@ pub struct FsWrite;
 /// Permission for all filesystem operations. Subsumes [`FsRead`] and [`FsWrite`].
 pub struct FsAll;
 
-// ── Network ─────────────────────────────────────────────────────
+//  Network
 
 /// Permission to open outbound TCP and UDP connections.
 pub struct NetConnect;
@@ -54,7 +61,7 @@ pub struct NetBind;
 /// Permission for all network operations. Subsumes [`NetConnect`] and [`NetBind`].
 pub struct NetAll;
 
-// ── Environment ─────────────────────────────────────────────────
+//  Environment
 
 /// Permission to read environment variables.
 pub struct EnvRead;
@@ -62,12 +69,12 @@ pub struct EnvRead;
 /// Permission to modify or remove environment variables.
 pub struct EnvWrite;
 
-// ── Process ─────────────────────────────────────────────────────
+//  Process
 
 /// Permission to spawn and execute subprocesses via `std::process::Command`.
 pub struct Spawn;
 
-// ── Ambient ─────────────────────────────────────────────────────
+//  Ambient
 
 /// Full ambient authority — grants every permission.
 ///
@@ -75,7 +82,7 @@ pub struct Spawn;
 /// Use sparingly and only at the capability root.
 pub struct Ambient;
 
-// ── Permission impls ────────────────────────────────────────────
+//  Permission impls
 
 impl Permission for FsRead {}
 impl Permission for FsWrite {}
@@ -88,7 +95,11 @@ impl Permission for EnvWrite {}
 impl Permission for Spawn {}
 impl Permission for Ambient {}
 
-// ── Subsumption ─────────────────────────────────────────────────
+//  Tuple permissions
+
+impl<A: Permission, B: Permission> Permission for (A, B) {}
+
+//  Subsumption
 
 /// Indicates that `Self` implies permission `P`.
 ///
@@ -103,7 +114,7 @@ impl Subsumes<NetConnect> for NetAll {}
 impl Subsumes<NetBind> for NetAll {}
 impl<P: Permission> Subsumes<P> for Ambient {}
 
-// ── Sealed ──────────────────────────────────────────────────────
+//  Sealed
 
 mod sealed {
     pub trait Sealed {}
@@ -117,6 +128,7 @@ mod sealed {
     impl Sealed for super::EnvWrite {}
     impl Sealed for super::Spawn {}
     impl Sealed for super::Ambient {}
+    impl<A: Sealed, B: Sealed> Sealed for (A, B) {}
 }
 
 #[cfg(test)]
@@ -140,6 +152,11 @@ mod tests {
 
     // Compile-time proof that subsumption relationships hold:
     fn _assert_subsumes<Super: Subsumes<Sub>, Sub: Permission>() {}
+
+    #[test]
+    fn tuple_permission_is_zst() {
+        assert_eq!(size_of::<(FsRead, NetConnect)>(), 0);
+    }
 
     #[test]
     fn subsumption_relationships() {
