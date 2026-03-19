@@ -3,6 +3,8 @@
 //! Shows how to use capability contexts in async/threaded code.
 //! The `send` variant uses `SendCap<P>` fields, making the context
 //! `Send + Sync` so it can be wrapped in `Arc` and shared across tasks.
+//!
+//! Requires: `capsec = { features = ["tokio"] }`
 
 use capsec::CapSecError;
 use std::sync::Arc;
@@ -14,9 +16,9 @@ struct AppCtx {
     fs: FsRead,
 }
 
-/// Simulates handling a request. The context is shared via Arc.
+/// Handles a request using async capsec wrappers.
 async fn handle_request(id: usize, ctx: &AppCtx) -> Result<(), CapSecError> {
-    let data = capsec::fs::read_to_string("/etc/hostname", ctx)?;
+    let data = capsec::tokio::fs::read_to_string("/etc/hostname", ctx).await?;
     println!("[task {id}] hostname: {}", data.trim());
     Ok(())
 }
