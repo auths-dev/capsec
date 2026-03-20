@@ -8,6 +8,7 @@ members = [
     "crates/cargo-capsec",
     "crates/capsec-tokio",
     "crates/capsec-tests",
+    "crates/capsec-example-db",
 ]
 
 [workspace.package]

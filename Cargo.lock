@@ -109,6 +109,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "capsec-example-db"
+version = "0.1.0"
+dependencies = [
+ "capsec",
+ "capsec-core",
+]
+
+[[package]]
 name = "capsec-macro"
 version = "0.1.0"
 dependencies = [
