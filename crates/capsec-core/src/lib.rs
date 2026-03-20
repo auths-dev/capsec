@@ -45,6 +45,7 @@ pub mod error;
 pub mod has;
 pub mod permission;
 pub mod root;
+pub mod runtime;
 
 /// Re-export of the seal token module for use by `#[capsec::permission]` macro.
 /// Do not use directly.
