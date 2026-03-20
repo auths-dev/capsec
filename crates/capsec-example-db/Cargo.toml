@@ -10,6 +10,7 @@ publish = false
 [dependencies]
 capsec = { path = "../capsec" }
 capsec-core = { path = "../capsec-core" }
+duckdb = { version = "1", features = ["bundled"] }
 
 [dev-dependencies]
 capsec-core = { path = "../capsec-core" }

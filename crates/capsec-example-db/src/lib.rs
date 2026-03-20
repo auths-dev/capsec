@@ -1,16 +1,20 @@
-//! Example: user-defined database permissions with capsec.
+//! Capability-gated DuckDB wrapper.
 //!
 //! Demonstrates how library authors can define domain-specific permissions
-//! using `#[capsec::permission]`. These permissions mirror the kind of
-//! runtime capabilities used by auths (`db:read`, `db:write`).
+//! using `#[capsec::permission]` and gate real database operations behind them.
+//!
+//! The core idea: if you only hold `Cap<DbRead>`, the compiler won't let you
+//! call `db_execute` — you literally cannot write to the database without the
+//! type system proving you have `DbWrite` permission.
 
 use capsec::{Cap, Has};
+use duckdb::Connection;
 
-/// Permission to execute database read queries.
+/// Permission to execute database read queries (SELECT).
 #[capsec::permission]
 pub struct DbRead;
 
-/// Permission to execute database write statements.
+/// Permission to execute database write statements (INSERT, UPDATE, DELETE, DDL).
 #[capsec::permission]
 pub struct DbWrite;
 
@@ -18,25 +22,82 @@ pub struct DbWrite;
 #[capsec::permission(subsumes = [DbRead, DbWrite])]
 pub struct DbAll;
 
-/// Execute a read query, returning mock results.
-pub fn query<C: Has<DbRead>>(sql: &str, cap: &C) -> Vec<String> {
-    let _proof: Cap<DbRead> = cap.cap_ref();
-    vec![format!("result of: {sql}")]
+/// A capability-gated DuckDB connection.
+///
+/// Wraps a `duckdb::Connection` and gates all operations behind capsec
+/// permission tokens. The connection itself has no capability — you must
+/// pass a capability proof to every operation.
+pub struct CapDb {
+    conn: Connection,
 }
 
-/// Execute a write statement, returning rows affected.
-pub fn execute<C: Has<DbWrite>>(sql: &str, cap: &C) -> u64 {
-    let _proof: Cap<DbWrite> = cap.cap_ref();
-    let _ = sql;
-    1
-}
+impl CapDb {
+    /// Open an in-memory DuckDB database.
+    pub fn open_in_memory() -> Result<Self, duckdb::Error> {
+        Ok(Self {
+            conn: Connection::open_in_memory()?,
+        })
+    }
 
-/// Run migrations (requires full database access).
-pub fn migrate<C: Has<DbAll>>(cap: &C) {
-    let _proof: Cap<DbAll> = cap.cap_ref();
-    // DbAll subsumes DbRead + DbWrite, so we can extract proofs:
-    let _read_proof: Cap<DbRead> = Has::<DbRead>::cap_ref(&_proof);
-    let _write_proof: Cap<DbWrite> = Has::<DbWrite>::cap_ref(&_proof);
+    /// Execute a read query and collect results as string rows.
+    ///
+    /// All columns are returned as strings (caller should CAST in SQL).
+    /// Requires `DbRead` capability. Will not compile if you only hold `DbWrite`.
+    pub fn query<C: Has<DbRead>>(
+        &self,
+        sql: &str,
+        cap: &C,
+    ) -> Result<Vec<Vec<String>>, duckdb::Error> {
+        let _proof: Cap<DbRead> = cap.cap_ref();
+        let mut stmt = self.conn.prepare(sql)?;
+        let mut result_rows = Vec::new();
+        let mut rows = stmt.query([])?;
+        while let Some(row) = rows.next()? {
+            let mut vals = Vec::new();
+            let mut i = 0;
+            loop {
+                match row.get::<_, String>(i) {
+                    Ok(val) => vals.push(val),
+                    Err(_) => break,
+                }
+                i += 1;
+            }
+            result_rows.push(vals);
+        }
+        Ok(result_rows)
+    }
+
+    /// Execute a write statement (INSERT, UPDATE, DELETE, DDL).
+    ///
+    /// Requires `DbWrite` capability. Will not compile if you only hold `DbRead`.
+    pub fn execute<C: Has<DbWrite>>(&self, sql: &str, cap: &C) -> Result<usize, duckdb::Error> {
+        let _proof: Cap<DbWrite> = cap.cap_ref();
+        self.conn.execute(sql, [])
+    }
+
+    /// Execute a batch of DDL/DML statements.
+    ///
+    /// Requires `DbWrite` capability.
+    pub fn execute_batch<C: Has<DbWrite>>(&self, sql: &str, cap: &C) -> Result<(), duckdb::Error> {
+        let _proof: Cap<DbWrite> = cap.cap_ref();
+        self.conn.execute_batch(sql)
+    }
+
+    /// Run a migration: create schema then seed data.
+    ///
+    /// Requires `DbAll` — proves you can both read and write.
+    pub fn migrate<C: Has<DbAll>>(&self, ddl: &str, cap: &C) -> Result<(), duckdb::Error> {
+        let _proof: Cap<DbAll> = cap.cap_ref();
+        self.conn.execute_batch(ddl)
+    }
+
+    /// Query a single scalar value.
+    ///
+    /// Requires `DbRead` capability.
+    pub fn query_one<C: Has<DbRead>>(&self, sql: &str, cap: &C) -> Result<String, duckdb::Error> {
+        let _proof: Cap<DbRead> = cap.cap_ref();
+        self.conn.query_row(sql, [], |row| row.get(0))
+    }
 }
 
 #[cfg(test)]
@@ -47,27 +108,42 @@ mod tests {
     #[test]
     fn grant_custom_permission() {
         let root = test_root();
-        let cap = root.grant::<DbRead>();
-        let results = query("SELECT 1", &cap);
-        assert_eq!(results, vec!["result of: SELECT 1"]);
-    }
+        let db = CapDb::open_in_memory().unwrap();
+        let write_cap = root.grant::<DbWrite>();
+        db.execute("CREATE TABLE t (x INTEGER)", &write_cap)
+            .unwrap();
+        db.execute("INSERT INTO t VALUES (42)", &write_cap).unwrap();
 
-    #[test]
-    fn grant_custom_write() {
-        let root = test_root();
-        let cap = root.grant::<DbWrite>();
-        let rows = execute("INSERT INTO t VALUES (1)", &cap);
-        assert_eq!(rows, 1);
+        let read_cap = root.grant::<DbRead>();
+        let rows = db
+            .query("SELECT CAST(x AS VARCHAR) FROM t", &read_cap)
+            .unwrap();
+        assert_eq!(rows, vec![vec!["42".to_string()]]);
     }
 
     #[test]
     fn db_all_subsumes_read_and_write() {
         let root = test_root();
+        let db = CapDb::open_in_memory().unwrap();
         let cap = root.grant::<DbAll>();
-        // DbAll satisfies Has<DbRead> and Has<DbWrite>
-        let _ = query("SELECT 1", &cap);
-        let _ = execute("INSERT INTO t VALUES (1)", &cap);
-        migrate(&cap);
+
+        db.execute("CREATE TABLE t (x INTEGER)", &cap).unwrap();
+        db.execute("INSERT INTO t VALUES (1)", &cap).unwrap();
+        let rows = db.query("SELECT CAST(x AS VARCHAR) FROM t", &cap).unwrap();
+        assert_eq!(rows.len(), 1);
+    }
+
+    #[test]
+    fn migrate_requires_db_all() {
+        let root = test_root();
+        let db = CapDb::open_in_memory().unwrap();
+        let cap = root.grant::<DbAll>();
+        db.migrate("CREATE TABLE users (id INTEGER, name VARCHAR)", &cap)
+            .unwrap();
+        let count = db
+            .query_one("SELECT CAST(COUNT(*) AS VARCHAR) FROM users", &cap)
+            .unwrap();
+        assert_eq!(count, "0");
     }
 
     #[test]
@@ -86,9 +162,12 @@ mod tests {
         }
 
         let root = test_root();
+        let db = CapDb::open_in_memory().unwrap();
         let ctx = DbCtx::new(&root);
-        let _ = query("SELECT 1", &ctx);
-        let _ = execute("INSERT INTO t VALUES (1)", &ctx);
+        db.execute("CREATE TABLE t (x INTEGER)", &ctx).unwrap();
+        db.execute("INSERT INTO t VALUES (1)", &ctx).unwrap();
+        let rows = db.query("SELECT CAST(x AS VARCHAR) FROM t", &ctx).unwrap();
+        assert_eq!(rows.len(), 1);
     }
 
     #[test]
@@ -99,14 +178,15 @@ mod tests {
         }
 
         #[capsec::requires(DbRead, on = ctx)]
-        fn checked_query(ctx: &QueryCtx) -> Vec<String> {
-            query("SELECT 1", ctx)
+        fn checked_query(db: &CapDb, ctx: &QueryCtx) -> Vec<Vec<String>> {
+            db.query("SELECT 'hello'", ctx).unwrap()
         }
 
         let root = test_root();
+        let db = CapDb::open_in_memory().unwrap();
         let ctx = QueryCtx::new(&root);
-        let results = checked_query(&ctx);
-        assert_eq!(results, vec!["result of: SELECT 1"]);
+        let results = checked_query(&db, &ctx);
+        assert_eq!(results, vec![vec!["hello".to_string()]]);
     }
 
     #[test]
@@ -120,9 +200,11 @@ mod tests {
         }
 
         let root = test_root();
+        let db = CapDb::open_in_memory().unwrap();
         let ctx = MixedCtx::new(&root);
-        let _ = query("SELECT 1", &ctx);
-        // ctx also satisfies Has<FsRead>
+        let rows = db.query("SELECT 'mixed'", &ctx).unwrap();
+        assert_eq!(rows, vec![vec!["mixed".to_string()]]);
+
         fn needs_fs(_: &impl Has<FsRead>) {}
         needs_fs(&ctx);
     }
