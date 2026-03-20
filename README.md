@@ -4,16 +4,27 @@
 [![crates.io](https://img.shields.io/crates/v/capsec.svg)](https://crates.io/crates/capsec)
 [![docs.rs](https://docs.rs/capsec/badge.svg)](https://docs.rs/capsec)
 
-Capability-based security tooling for Rust.
+Rust guarantees memory safety — capsec guarantees behavioral safety.
 
-Rust guarantees memory safety. It does not guarantee your CSV parser isn't opening a TCP socket to phone home telemetry. `cargo audit` checks CVEs. `cargo vet` checks trust. Nothing tells you what the code actually *does*.
+### Quick Start
 
-capsec fills that gap with two tools:
+```bash
+# See what your code and dependencies actually do (zero config, zero code changes):
+cargo install cargo-capsec
+cargo capsec audit
+```
 
-- **`cargo-capsec`** — a static audit tool that scans your code and reports every I/O call. Drop it into CI and know exactly what your dependencies do.
-- **`capsec`** — a type system that enforces I/O permissions at compile time. Functions declare what they need, and the compiler rejects anything that exceeds it.
+---
 
-The audit tool finds the problems. The type system enforces the fix.
+`cargo audit` checks CVEs. `cargo vet` checks trust. Neither tells you what the code actually *does*. Nothing stops your CSV parser from opening a TCP socket to phone home telemetry.
+
+capsec fills that gap with three layers:
+
+1. **`cargo capsec audit`** — a static audit tool that scans your code and reports every I/O call. Drop it into CI and know exactly what your dependencies do.
+2. **Compile-time type system** — functions declare their I/O permissions via `Has<P>` trait bounds, and the compiler rejects anything that exceeds them. Zero runtime cost.
+3. **Runtime capability control** — `RuntimeCap` (revocable) and `TimedCap` (expiring) wrap static capabilities with runtime validity checks for dynamic scenarios like server init or migration windows.
+
+The audit tool finds the problems. The type system prevents them at compile time. Runtime caps handle the cases where permissions need to change dynamically.
 
 ---
 
@@ -70,8 +81,8 @@ jobs:
 New high-risk I/O in a PR? CI fails. No new I/O? CI passes. Teams can adopt incrementally with `--baseline` and `--diff` to only flag *new* findings.
 
 To see it in action, you can reference these:
-* [CI/CD](https://github.com/bordumb/capsec/blob/main/.github/workflows/ci.yml#L49-L56)
-* [Pre-Commit Hook](https://github.com/bordumb/capsec/blob/main/.pre-commit-config.yaml#L35-L40)
+* [CI/CD](https://github.com/bordumb/capsec/blob/main/.github/workflows/ci.yml#L57)
+* [Pre-Commit Hook](https://github.com/bordumb/capsec/blob/main/.pre-commit-config.yaml#L32)
 
 ---
 
@@ -213,21 +224,100 @@ What capsec **does not** protect against:
 - **Direct `std` calls** that bypass capsec wrappers. A function can always call `std::fs::read()` without a capability token — the compiler won't stop it. This is where `cargo capsec audit` comes in: it detects these calls statically.
 - **FFI and inline assembly** that interact with the OS directly. The audit tool flags `extern` blocks but cannot reason about what foreign code does.
 
-The two tools are complementary: the **type system** enforces boundaries within code that opts in, and the **audit tool** surfaces code that hasn't opted in yet. Neither is complete alone — together they provide defense in depth.
+The three layers are complementary: the **type system** enforces boundaries within code that opts in, the **audit tool** surfaces code that hasn't opted in yet, and **runtime caps** handle dynamic permission lifecycles. No single layer is complete alone — together they provide defense in depth.
 
-For the full catalog of known evasion vectors and how each tool handles them, see [`capsec-tests/tests/audit_evasion.rs`](crates/capsec-tests/tests/audit_evasion.rs).
+capsec ships with a 74-test adversarial security suite that documents every known evasion vector and attack surface — unsafe forgery, `std` bypass, FFI escape hatches, context delegation attacks, and more. Most security tools don't catalog their own weaknesses. capsec does, so you know exactly what's covered and what isn't. See [`capsec-tests/tests/type_system.rs`](crates/capsec-tests/tests/type_system.rs) and [`capsec-tests/tests/audit_evasion.rs`](crates/capsec-tests/tests/audit_evasion.rs).
+
+---
+
+## Runtime Capability Control
+
+Static `Cap<P>` tokens are permanent — once granted, they're valid forever. For scenarios where permissions should be temporary or revocable, capsec provides runtime capability wrappers.
+
+### Revocable capabilities
+
+Grant network access for server startup, then revoke it so no new connections can be made at runtime:
+
+```rust
+use capsec::prelude::*;
+
+#[capsec::main]
+fn main(root: CapRoot) -> Result<(), Box<dyn std::error::Error>> {
+    // Wrap a capability with a revocation handle
+    let (runtime_cap, revoker) = RuntimeCap::new(root.net_connect());
+
+    // During startup: try_cap() returns a real Cap<NetConnect>
+    let cap = runtime_cap.try_cap()?;
+    init_connection_pool(&cap);
+
+    // After init: revoke — no new connections possible
+    revoker.revoke();
+
+    // Now try_cap() returns Err(CapSecError::Revoked)
+    assert!(runtime_cap.try_cap().is_err());
+    Ok(())
+}
+```
+
+Runtime caps compose with the context pattern — wrap individual capabilities for revocation while keeping your context ergonomics:
+
+```rust
+#[capsec::context]
+struct ServerCtx {
+    fs: FsRead,
+    net: NetConnect,
+}
+
+// Grant static fs access + revocable net access
+let ctx = ServerCtx::new(&root);              // static caps for the context
+let (net_rt, revoker) = RuntimeCap::new(root.net_connect());  // revocable net cap
+
+// Use ctx for Has<FsRead> bounds, net_rt.try_cap()? for revocable net access
+```
+
+### Time-bounded capabilities
+
+Grant temporary write access for a migration window:
+
+```rust
+use capsec::prelude::*;
+use std::time::Duration;
+
+#[capsec::main]
+fn main(root: CapRoot) -> Result<(), Box<dyn std::error::Error>> {
+    let timed_cap = TimedCap::new(root.fs_write(), Duration::from_secs(30));
+
+    // Within the window: try_cap() succeeds
+    let cap = timed_cap.try_cap()?;
+    capsec::fs::write("/tmp/migration.txt", "data", &cap)?;
+
+    // After TTL: try_cap() returns Err(CapSecError::Expired)
+    // timed_cap.remaining() returns Duration::ZERO
+    Ok(())
+}
+```
+
+### Key properties
+
+- `RuntimeCap` and `TimedCap` do **not** implement `Has<P>` — fallibility is explicit via `try_cap()` at every call site
+- Both are `!Send` by default — use `make_send()` to opt into cross-thread transfer
+- Cloning a `RuntimeCap` shares the revocation flag — revoking one revokes all clones
+- `Revoker` is `Send + Sync + Clone` — revoke from any thread
 
 ### How capsec compares
 
 | Tool | Approach | Layer |
 |------|----------|-------|
-| **capsec** | Compile-time types (`Has<P>` bounds) + static audit | Source-level, cooperative |
+| **capsec** | Compile-time types (`Has<P>` bounds) + runtime caps (`RuntimeCap`, `TimedCap`) + static audit | Source-level, cooperative |
 | **[cap-std](https://github.com/bytecodealliance/cap-std)** | Runtime capability handles (ambient authority removal) | OS-level, WASI-oriented |
 | **[cargo-scan](https://github.com/AlfredoSystems/cargo-scan)** | Static analysis of dangerous API usage | Source-level, research prototype |
+| **[cargo-cgsec](https://github.com/nicholasgasior/cargo-cgsec)** | Call graph capability analysis (Capslock port) | Source-level, audit only |
 
 `cap-std` operates at a different layer — it replaces OS-level file descriptors with capability handles at runtime, targeting WASI sandboxing. capsec works at the type level with zero runtime cost and no OS support required. The two are complementary: you could use `cap-std` handles inside capsec-gated functions.
 
 `cargo-scan` (from UC San Diego) performs similar static analysis to `cargo capsec audit`. capsec adds the type-system enforcement layer and ships as a single workspace with both tools integrated.
+
+`cargo-cgsec` is a Rust port of Google's Capslock, funded by the Rust Foundation. It performs call graph analysis to identify capability usage — audit only, no enforcement or runtime layer. capsec covers the same audit surface via `cargo capsec audit` and adds compile-time type enforcement and runtime capability control.
 
 ---
 
