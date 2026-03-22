@@ -21,7 +21,7 @@ use crate::authorities::{
 };
 use crate::parser::{CallKind, ImportPath, ParsedFile};
 use serde::Serialize;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 /// A single instance of ambient authority usage found in source code.
 ///
@@ -66,6 +66,9 @@ pub struct Finding {
     /// whose denied categories cover this finding's category.
     /// Deny violations are always promoted to `Critical` risk.
     pub is_deny_violation: bool,
+    /// True if this finding was propagated through the intra-file call graph
+    /// rather than being a direct call to an ambient authority API.
+    pub is_transitive: bool,
 }
 
 /// The ambient authority detector.
@@ -213,6 +216,7 @@ impl Detector {
                             crate_name: crate_name.to_string(),
                             crate_version: crate_version.to_string(),
                             is_deny_violation: deny_violation,
+                            is_transitive: false,
                         });
                         break;
                     }
@@ -279,6 +283,7 @@ impl Detector {
                 crate_name: crate_name.to_string(),
                 crate_version: crate_version.to_string(),
                 is_deny_violation: deny_violation,
+                is_transitive: false,
             });
         }
 
@@ -286,6 +291,23 @@ impl Detector {
         let mut seen = HashSet::new();
         findings
             .retain(|f| seen.insert((f.file.clone(), f.function.clone(), f.call_line, f.call_col)));
+
+        // Intra-file call-graph propagation
+        let propagated = propagate_findings(file, &findings, crate_name, crate_version, crate_deny);
+        findings.extend(propagated);
+
+        // Re-dedup after propagation (include category since one local call
+        // site can carry multiple transitive categories)
+        let mut seen2: HashSet<(String, String, usize, usize, String)> = HashSet::new();
+        findings.retain(|f| {
+            seen2.insert((
+                f.file.clone(),
+                f.function.clone(),
+                f.call_line,
+                f.call_col,
+                f.category.label().to_string(),
+            ))
+        });
 
         findings
     }
@@ -329,6 +351,7 @@ fn make_finding(
         crate_name: crate_name.to_string(),
         crate_version: crate_version.to_string(),
         is_deny_violation,
+        is_transitive: false,
     }
 }
 
@@ -366,6 +389,136 @@ fn is_category_denied(deny_categories: &[String], finding_category: &Category) -
         }
     }
     false
+}
+
+/// Propagates findings through the intra-file call graph.
+///
+/// After direct detection, local function calls (single-segment `FunctionCall`
+/// sites matching a function in the same file) propagate their callee's
+/// categories to the caller. Uses fixed-point iteration for transitivity.
+fn propagate_findings(
+    file: &ParsedFile,
+    direct_findings: &[Finding],
+    crate_name: &str,
+    crate_version: &str,
+    crate_deny: &[String],
+) -> Vec<Finding> {
+    // 1. Build set of function names defined in this file
+    let fn_names: HashSet<&str> = file.functions.iter().map(|f| f.name.as_str()).collect();
+
+    // 2. Build direct categories per function: fn_name -> set of (category, max_risk)
+    let mut direct_cats: HashMap<&str, HashSet<(Category, Risk)>> = HashMap::new();
+    for finding in direct_findings {
+        direct_cats
+            .entry(finding.function.as_str())
+            .or_default()
+            .insert((finding.category.clone(), finding.risk));
+    }
+
+    // 3. Build local call graph: caller -> [(callee_name, call_site_index)]
+    //    Only single-segment FunctionCall calls to functions in this file.
+    let mut call_graph: HashMap<&str, Vec<(&str, usize)>> = HashMap::new();
+    for func in &file.functions {
+        for (i, call) in func.calls.iter().enumerate() {
+            if matches!(call.kind, CallKind::FunctionCall)
+                && call.segments.len() == 1
+                && fn_names.contains(call.segments[0].as_str())
+                && call.segments[0] != func.name
+            // skip direct recursion
+            {
+                call_graph
+                    .entry(func.name.as_str())
+                    .or_default()
+                    .push((call.segments[0].as_str(), i));
+            }
+        }
+    }
+
+    if call_graph.is_empty() {
+        return Vec::new();
+    }
+
+    // 4. Fixed-point: propagate categories from callees to callers
+    let mut effective_cats: HashMap<&str, HashSet<(Category, Risk)>> = direct_cats.clone();
+    loop {
+        let mut changed = false;
+        for (&caller, callees) in &call_graph {
+            for &(callee, _) in callees {
+                if let Some(callee_cats) = effective_cats.get(callee).cloned() {
+                    let caller_set = effective_cats.entry(caller).or_default();
+                    for cat_risk in &callee_cats {
+                        if caller_set.insert(cat_risk.clone()) {
+                            changed = true;
+                        }
+                    }
+                }
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+
+    // 5. Generate transitive findings for newly propagated categories
+    let mut propagated = Vec::new();
+    for func in &file.functions {
+        let effective = match effective_cats.get(func.name.as_str()) {
+            Some(cats) => cats,
+            None => continue,
+        };
+        let direct = direct_cats.get(func.name.as_str());
+
+        let effective_deny = merge_deny(&func.deny_categories, crate_deny);
+
+        // For each category the function has transitively but not directly
+        for (category, risk) in effective {
+            let is_direct = direct.is_some_and(|d| d.iter().any(|(c, _)| c == category));
+            if is_direct {
+                continue;
+            }
+
+            // Find which local call site brought this category in
+            if let Some(callees) = call_graph.get(func.name.as_str()) {
+                for &(callee, call_idx) in callees {
+                    let callee_has_cat = effective_cats
+                        .get(callee)
+                        .is_some_and(|cats| cats.iter().any(|(c, _)| c == category));
+                    if callee_has_cat {
+                        let call = &func.calls[call_idx];
+                        let deny_violation = is_category_denied(&effective_deny, category);
+                        propagated.push(Finding {
+                            file: file.path.clone(),
+                            function: func.name.clone(),
+                            function_line: func.line,
+                            call_line: call.line,
+                            call_col: call.col,
+                            call_text: callee.to_string(),
+                            category: category.clone(),
+                            subcategory: "transitive".to_string(),
+                            risk: if deny_violation {
+                                Risk::Critical
+                            } else {
+                                *risk
+                            },
+                            description: format!(
+                                "Transitive: calls {}() which exercises {} authority",
+                                callee,
+                                category.label().to_lowercase()
+                            ),
+                            is_build_script: func.is_build_script,
+                            crate_name: crate_name.to_string(),
+                            crate_version: crate_version.to_string(),
+                            is_deny_violation: deny_violation,
+                            is_transitive: true,
+                        });
+                        break; // one finding per category per function
+                    }
+                }
+            }
+        }
+    }
+
+    propagated
 }
 
 type ImportMap = Vec<(String, Vec<String>)>;
@@ -800,5 +953,189 @@ mod tests {
         let findings = detector.analyse(&parsed, "test-crate", "0.1.0", &[]);
         assert!(!findings.is_empty());
         assert!(!findings[0].is_deny_violation);
+    }
+
+    // ── Intra-file call-graph propagation tests ──
+
+    #[test]
+    fn transitive_basic() {
+        let source = r#"
+            use std::fs;
+            fn helper() {
+                let _ = fs::read("data");
+            }
+            fn caller() {
+                helper();
+            }
+        "#;
+        let parsed = parse_source(source, "test.rs").unwrap();
+        let detector = Detector::new();
+        let findings = detector.analyse(&parsed, "test-crate", "0.1.0", &[]);
+        let caller_findings: Vec<_> = findings.iter().filter(|f| f.function == "caller").collect();
+        assert!(
+            !caller_findings.is_empty(),
+            "caller should get a transitive finding"
+        );
+        assert!(caller_findings[0].is_transitive);
+        assert_eq!(caller_findings[0].category, Category::Fs);
+        assert_eq!(caller_findings[0].call_text, "helper");
+        assert!(caller_findings[0].description.contains("Transitive"));
+    }
+
+    #[test]
+    fn transitive_chain_of_3() {
+        let source = r#"
+            use std::fs;
+            fn deep() {
+                let _ = fs::read("data");
+            }
+            fn middle() {
+                deep();
+            }
+            fn top() {
+                middle();
+            }
+        "#;
+        let parsed = parse_source(source, "test.rs").unwrap();
+        let detector = Detector::new();
+        let findings = detector.analyse(&parsed, "test-crate", "0.1.0", &[]);
+        let top_findings: Vec<_> = findings.iter().filter(|f| f.function == "top").collect();
+        let mid_findings: Vec<_> = findings.iter().filter(|f| f.function == "middle").collect();
+        assert!(
+            !top_findings.is_empty(),
+            "top should get transitive FS finding"
+        );
+        assert!(
+            !mid_findings.is_empty(),
+            "middle should get transitive FS finding"
+        );
+        assert!(top_findings[0].is_transitive);
+        assert!(mid_findings[0].is_transitive);
+    }
+
+    #[test]
+    fn transitive_no_method_calls() {
+        let source = r#"
+            use std::fs;
+            fn helper() {
+                let _ = fs::read("data");
+            }
+            fn caller() {
+                let obj = something();
+                obj.helper();
+            }
+        "#;
+        let parsed = parse_source(source, "test.rs").unwrap();
+        let detector = Detector::new();
+        let findings = detector.analyse(&parsed, "test-crate", "0.1.0", &[]);
+        let caller_findings: Vec<_> = findings.iter().filter(|f| f.function == "caller").collect();
+        assert!(
+            caller_findings.is_empty(),
+            "method call obj.helper() should NOT propagate from fn helper()"
+        );
+    }
+
+    #[test]
+    fn transitive_no_multi_segment() {
+        let source = r#"
+            use std::fs;
+            fn helper() {
+                let _ = fs::read("data");
+            }
+            fn caller() {
+                Self::helper();
+            }
+        "#;
+        let parsed = parse_source(source, "test.rs").unwrap();
+        let detector = Detector::new();
+        let findings = detector.analyse(&parsed, "test-crate", "0.1.0", &[]);
+        let caller_findings: Vec<_> = findings
+            .iter()
+            .filter(|f| f.function == "caller" && f.is_transitive)
+            .collect();
+        assert!(
+            caller_findings.is_empty(),
+            "Self::helper() should NOT propagate in v1"
+        );
+    }
+
+    #[test]
+    fn transitive_cycle() {
+        let source = r#"
+            use std::fs;
+            fn a() {
+                let _ = fs::read("data");
+                b();
+            }
+            fn b() {
+                a();
+            }
+        "#;
+        let parsed = parse_source(source, "test.rs").unwrap();
+        let detector = Detector::new();
+        let findings = detector.analyse(&parsed, "test-crate", "0.1.0", &[]);
+        let b_findings: Vec<_> = findings.iter().filter(|f| f.function == "b").collect();
+        assert!(!b_findings.is_empty(), "b should get transitive FS from a");
+        assert!(b_findings[0].is_transitive);
+    }
+
+    #[test]
+    fn transitive_multiple_categories() {
+        let source = r#"
+            use std::fs;
+            use std::net::TcpStream;
+            fn helper() {
+                let _ = fs::read("data");
+                let _ = TcpStream::connect("127.0.0.1:80");
+            }
+            fn caller() {
+                helper();
+            }
+        "#;
+        let parsed = parse_source(source, "test.rs").unwrap();
+        let detector = Detector::new();
+        let findings = detector.analyse(&parsed, "test-crate", "0.1.0", &[]);
+        let caller_findings: Vec<_> = findings.iter().filter(|f| f.function == "caller").collect();
+        let cats: HashSet<_> = caller_findings.iter().map(|f| &f.category).collect();
+        assert!(cats.contains(&Category::Fs), "caller should get FS");
+        assert!(cats.contains(&Category::Net), "caller should get NET");
+    }
+
+    #[test]
+    fn transitive_deny_on_caller() {
+        let source = r#"
+            use std::fs;
+            fn helper() {
+                let _ = fs::read("data");
+            }
+            #[doc = "capsec::deny(fs)"]
+            fn caller() {
+                helper();
+            }
+        "#;
+        let parsed = parse_source(source, "test.rs").unwrap();
+        let detector = Detector::new();
+        let findings = detector.analyse(&parsed, "test-crate", "0.1.0", &[]);
+        let caller_findings: Vec<_> = findings.iter().filter(|f| f.function == "caller").collect();
+        assert!(!caller_findings.is_empty());
+        assert!(caller_findings[0].is_transitive);
+        assert!(caller_findings[0].is_deny_violation);
+        assert_eq!(caller_findings[0].risk, Risk::Critical);
+    }
+
+    #[test]
+    fn transitive_callee_not_in_file() {
+        let source = r#"
+            fn caller() {
+                external_function();
+            }
+        "#;
+        let parsed = parse_source(source, "test.rs").unwrap();
+        let detector = Detector::new();
+        let findings = detector.analyse(&parsed, "test-crate", "0.1.0", &[]);
+        assert!(
+            findings.is_empty(),
+            "call to function not in file should not propagate"
+        );
     }
 }
