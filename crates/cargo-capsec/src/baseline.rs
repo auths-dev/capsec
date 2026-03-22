@@ -174,6 +174,7 @@ mod tests {
             crate_name: "test-crate".to_string(),
             crate_version: "0.1.0".to_string(),
             is_deny_violation: false,
+            is_transitive: false,
         }
     }
 

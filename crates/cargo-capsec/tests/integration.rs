@@ -221,3 +221,35 @@ fn baseline_round_trip() {
     assert_eq!(diff.removed_findings.len(), 0);
     assert_eq!(diff.unchanged_count, findings.len());
 }
+
+#[test]
+fn transitive_crate_propagates_findings() {
+    let source = fixture_source("transitive_crate");
+    let parsed = parse_source(&source, "transitive_crate/src/lib.rs").unwrap();
+    let detector = Detector::new();
+    let findings = detector.analyse(&parsed, "transitive_crate", "0.1.0", &[]);
+
+    // read_helper should have a direct FS finding
+    let helper_findings: Vec<_> = findings
+        .iter()
+        .filter(|f| f.function == "read_helper")
+        .collect();
+    assert!(
+        !helper_findings.is_empty(),
+        "read_helper should have direct FS finding"
+    );
+    assert!(!helper_findings[0].is_transitive);
+
+    // public_api should have a transitive FS finding
+    let api_findings: Vec<_> = findings
+        .iter()
+        .filter(|f| f.function == "public_api")
+        .collect();
+    assert!(
+        !api_findings.is_empty(),
+        "public_api should have transitive FS finding from read_helper"
+    );
+    assert!(api_findings[0].is_transitive);
+    assert_eq!(api_findings[0].category, Category::Fs);
+    assert_eq!(api_findings[0].call_text, "read_helper");
+}

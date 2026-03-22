@@ -42,6 +42,16 @@ pub fn report_text(findings: &[Finding]) {
                     f.call_text.bold(),
                     f.function,
                 );
+            } else if f.is_transitive {
+                println!(
+                    "  {:<5} {}:{}:{}  {:<28} {}()",
+                    "VIA".white().bold(),
+                    f.file.dimmed(),
+                    f.call_line,
+                    f.call_col,
+                    format!("{}()", f.call_text).bold(),
+                    f.function,
+                );
             } else {
                 let colored_cat = colorize_category(&f.category);
                 println!(
@@ -192,6 +202,8 @@ pub struct JsonFinding {
     pub is_build_script: bool,
     /// Whether this is a deny violation (ambient authority in a #[deny] function).
     pub is_deny_violation: bool,
+    /// Whether this finding was propagated through the intra-file call graph.
+    pub is_transitive: bool,
 }
 
 /// Aggregate statistics in the JSON report.
@@ -265,6 +277,7 @@ fn finding_to_json(f: &Finding) -> JsonFinding {
         description: f.description.clone(),
         is_build_script: f.is_build_script,
         is_deny_violation: f.is_deny_violation,
+        is_transitive: f.is_transitive,
     }
 }
 
@@ -469,6 +482,7 @@ mod tests {
                 crate_name: "my-app".to_string(),
                 crate_version: "0.1.0".to_string(),
                 is_deny_violation: false,
+                is_transitive: false,
             },
             Finding {
                 file: "/workspace/project/src/net.rs".to_string(),
@@ -485,6 +499,7 @@ mod tests {
                 crate_name: "my-app".to_string(),
                 crate_version: "0.1.0".to_string(),
                 is_deny_violation: false,
+                is_transitive: false,
             },
         ]
     }
@@ -629,6 +644,7 @@ mod tests {
                 crate_name: "app".to_string(),
                 crate_version: "0.1.0".to_string(),
                 is_deny_violation: false,
+                is_transitive: false,
             },
             Finding {
                 file: "/workspace/project/src/b.rs".to_string(),
@@ -645,6 +661,7 @@ mod tests {
                 crate_name: "app".to_string(),
                 crate_version: "0.1.0".to_string(),
                 is_deny_violation: false,
+                is_transitive: false,
             },
         ];
 
@@ -825,6 +842,7 @@ mod tests {
             crate_name: "my-app".to_string(),
             crate_version: "0.1.0".to_string(),
             is_deny_violation: false,
+            is_transitive: false,
         };
         let fp1 = compute_fingerprint(&f);
         let fp2 = compute_fingerprint(&f);
