@@ -19,7 +19,7 @@ fn clean_crate_zero_findings() {
     let source = fixture_source("clean_crate");
     let parsed = parse_source(&source, "clean_crate/src/lib.rs").unwrap();
     let detector = Detector::new();
-    let findings = detector.analyse(&parsed, "clean_crate", "0.1.0");
+    let findings = detector.analyse(&parsed, "clean_crate", "0.1.0", &[]);
     assert!(
         findings.is_empty(),
         "Clean crate should have zero findings, got: {findings:?}"
@@ -31,7 +31,7 @@ fn fs_crate_detects_filesystem_calls() {
     let source = fixture_source("fs_crate");
     let parsed = parse_source(&source, "fs_crate/src/lib.rs").unwrap();
     let detector = Detector::new();
-    let findings = detector.analyse(&parsed, "fs_crate", "0.1.0");
+    let findings = detector.analyse(&parsed, "fs_crate", "0.1.0", &[]);
 
     let fs_findings: Vec<_> = findings
         .iter()
@@ -76,7 +76,7 @@ fn net_crate_detects_network_calls() {
     let source = fixture_source("net_crate");
     let parsed = parse_source(&source, "net_crate/src/lib.rs").unwrap();
     let detector = Detector::new();
-    let findings = detector.analyse(&parsed, "net_crate", "0.1.0");
+    let findings = detector.analyse(&parsed, "net_crate", "0.1.0", &[]);
 
     let net_findings: Vec<_> = findings
         .iter()
@@ -104,7 +104,7 @@ fn sneaky_crate_detects_imported_calls() {
     let source = fixture_source("sneaky_crate");
     let parsed = parse_source(&source, "sneaky_crate/src/lib.rs").unwrap();
     let detector = Detector::new();
-    let findings = detector.analyse(&parsed, "sneaky_crate", "0.1.0");
+    let findings = detector.analyse(&parsed, "sneaky_crate", "0.1.0", &[]);
 
     // Should detect read_to_string via import expansion
     let fs_findings: Vec<_> = findings
@@ -133,7 +133,7 @@ fn aliased_crate_detects_renamed_imports() {
     let source = fixture_source("aliased_crate");
     let parsed = parse_source(&source, "aliased_crate/src/lib.rs").unwrap();
     let detector = Detector::new();
-    let findings = detector.analyse(&parsed, "aliased_crate", "0.1.0");
+    let findings = detector.analyse(&parsed, "aliased_crate", "0.1.0", &[]);
 
     // Import aliases ARE detected because we track use-statement aliases
     assert!(
@@ -156,7 +156,7 @@ fn json_output_is_valid() {
     let source = fixture_source("fs_crate");
     let parsed = parse_source(&source, "fs_crate/src/lib.rs").unwrap();
     let detector = Detector::new();
-    let findings = detector.analyse(&parsed, "fs_crate", "0.1.0");
+    let findings = detector.analyse(&parsed, "fs_crate", "0.1.0", &[]);
 
     let json = cargo_capsec::reporter::report_json(&findings);
     let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
@@ -168,7 +168,7 @@ fn sarif_output_is_valid() {
     let source = fixture_source("fs_crate");
     let parsed = parse_source(&source, "fs_crate/src/lib.rs").unwrap();
     let detector = Detector::new();
-    let findings = detector.analyse(&parsed, "fs_crate", "0.1.0");
+    let findings = detector.analyse(&parsed, "fs_crate", "0.1.0", &[]);
 
     let sarif = cargo_capsec::reporter::report_sarif(&findings, std::path::Path::new("."));
     let parsed: serde_json::Value = serde_json::from_str(&sarif).unwrap();
@@ -181,7 +181,7 @@ fn config_allow_suppresses_findings() {
     let source = fixture_source("fs_crate");
     let parsed = parse_source(&source, "fs_crate/src/lib.rs").unwrap();
     let detector = Detector::new();
-    let mut findings = detector.analyse(&parsed, "fs_crate", "0.1.0");
+    let mut findings = detector.analyse(&parsed, "fs_crate", "0.1.0", &[]);
 
     let toml_str = r#"
         [[allow]]
@@ -204,7 +204,7 @@ fn baseline_round_trip() {
     let source = fixture_source("net_crate");
     let parsed = parse_source(&source, "net_crate/src/lib.rs").unwrap();
     let detector = Detector::new();
-    let findings = detector.analyse(&parsed, "net_crate", "0.1.0");
+    let findings = detector.analyse(&parsed, "net_crate", "0.1.0", &[]);
 
     let root = capsec_core::root::test_root();
     let read_cap = root.grant::<capsec_core::permission::FsRead>();

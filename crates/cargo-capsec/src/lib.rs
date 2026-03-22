@@ -19,7 +19,7 @@
 //!
 //! Supporting modules:
 //!
-//! - **[`config`]** — `.capsec.toml` parsing for custom authorities and allow rules
+//! - **[`config`]** — `.capsec.toml` parsing for custom authorities, allow rules, and crate-level deny
 //! - **[`baseline`]** — diff findings against previous runs to detect new capabilities
 //!
 //! ## Programmatic usage
@@ -35,7 +35,7 @@
 //!
 //! let parsed = parse_source(source, "example.rs").unwrap();
 //! let detector = Detector::new();
-//! let findings = detector.analyse(&parsed, "my-crate", "0.1.0");
+//! let findings = detector.analyse(&parsed, "my-crate", "0.1.0", &[]);
 //!
 //! for f in &findings {
 //!     println!("[{}] {} in {}()", f.category.label(), f.call_text, f.function);
