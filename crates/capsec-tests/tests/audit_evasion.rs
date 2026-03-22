@@ -11,7 +11,7 @@ use cargo_capsec::parser::parse_source;
 fn count_findings(source: &str) -> usize {
     let parsed = parse_source(source, "evasion_test.rs").unwrap();
     let detector = Detector::new();
-    detector.analyse(&parsed, "test-crate", "0.1.0").len()
+    detector.analyse(&parsed, "test-crate", "0.1.0", &[]).len()
 }
 
 /// Helper: returns true if the source evades detection (zero findings).

@@ -88,7 +88,7 @@ pub struct Finding {
 ///
 /// let parsed = parse_source(source, "example.rs").unwrap();
 /// let detector = Detector::new();
-/// let findings = detector.analyse(&parsed, "my-crate", "0.1.0");
+/// let findings = detector.analyse(&parsed, "my-crate", "0.1.0", &[]);
 /// assert_eq!(findings.len(), 1);
 /// ```
 pub struct Detector {
@@ -127,16 +127,23 @@ impl Detector {
     ///
     /// Expands call paths using the file's `use` imports, matches against the
     /// authority registry (built-in + custom), and deduplicates by call site.
+    ///
+    /// `crate_deny` is the list of denied categories from `.capsec.toml`'s `[deny]`
+    /// section. These are merged with any function-level `#[capsec::deny(...)]`
+    /// annotations (union semantics).
     pub fn analyse(
         &self,
         file: &ParsedFile,
         crate_name: &str,
         crate_version: &str,
+        crate_deny: &[String],
     ) -> Vec<Finding> {
         let mut findings = Vec::new();
         let (import_map, glob_prefixes) = build_import_map(&file.use_imports);
 
         for func in &file.functions {
+            let effective_deny = merge_deny(&func.deny_categories, crate_deny);
+
             // Expand all calls upfront for context lookups
             let expanded_calls: Vec<Vec<String>> = func
                 .calls
@@ -173,6 +180,7 @@ impl Detector {
                             authority,
                             crate_name,
                             crate_version,
+                            &effective_deny,
                         ));
                         break;
                     }
@@ -181,7 +189,7 @@ impl Detector {
                 // Custom path authorities
                 for (pattern, category, risk, description) in &self.custom_paths {
                     if matches_custom_path(expanded, pattern) {
-                        let deny_violation = is_category_denied(&func.deny_categories, category);
+                        let deny_violation = is_category_denied(&effective_deny, category);
                         findings.push(Finding {
                             file: file.path.clone(),
                             function: func.name.clone(),
@@ -232,6 +240,7 @@ impl Detector {
                                 authority,
                                 crate_name,
                                 crate_version,
+                                &effective_deny,
                             ));
                             break;
                         }
@@ -240,8 +249,9 @@ impl Detector {
             }
         }
 
-        // Extern blocks (not inside a function, so no deny context)
+        // Extern blocks — check crate-level deny for FFI category
         for ext in &file.extern_blocks {
+            let deny_violation = is_category_denied(crate_deny, &Category::Ffi);
             findings.push(Finding {
                 file: file.path.clone(),
                 function: format!("extern \"{}\"", ext.abi.as_deref().unwrap_or("C")),
@@ -255,12 +265,20 @@ impl Detector {
                 ),
                 category: Category::Ffi,
                 subcategory: "extern".to_string(),
-                risk: Risk::High,
-                description: "Foreign function interface — bypasses Rust safety".to_string(),
+                risk: if deny_violation {
+                    Risk::Critical
+                } else {
+                    Risk::High
+                },
+                description: if deny_violation {
+                    "DENY VIOLATION: Foreign function interface — bypasses Rust safety".to_string()
+                } else {
+                    "Foreign function interface — bypasses Rust safety".to_string()
+                },
                 is_build_script: file.path.ends_with("build.rs"),
                 crate_name: crate_name.to_string(),
                 crate_version: crate_version.to_string(),
-                is_deny_violation: false,
+                is_deny_violation: deny_violation,
             });
         }
 
@@ -273,6 +291,7 @@ impl Detector {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn make_finding(
     file: &ParsedFile,
     func: &crate::parser::ParsedFunction,
@@ -281,8 +300,9 @@ fn make_finding(
     authority: &Authority,
     crate_name: &str,
     crate_version: &str,
+    effective_deny: &[String],
 ) -> Finding {
-    let is_deny_violation = is_category_denied(&func.deny_categories, &authority.category);
+    let is_deny_violation = is_category_denied(effective_deny, &authority.category);
     Finding {
         file: file.path.clone(),
         function: func.name.clone(),
@@ -312,7 +332,24 @@ fn make_finding(
     }
 }
 
-/// Checks if a finding's category is covered by the function's deny list.
+/// Merges function-level and crate-level deny categories (union semantics).
+fn merge_deny(function_deny: &[String], crate_deny: &[String]) -> Vec<String> {
+    if crate_deny.is_empty() {
+        return function_deny.to_vec();
+    }
+    if function_deny.is_empty() {
+        return crate_deny.to_vec();
+    }
+    let mut merged = function_deny.to_vec();
+    for cat in crate_deny {
+        if !merged.contains(cat) {
+            merged.push(cat.clone());
+        }
+    }
+    merged
+}
+
+/// Checks if a finding's category is covered by the deny list.
 fn is_category_denied(deny_categories: &[String], finding_category: &Category) -> bool {
     if deny_categories.is_empty() {
         return false;
@@ -429,7 +466,7 @@ mod tests {
         "#;
         let parsed = parse_source(source, "test.rs").unwrap();
         let detector = Detector::new();
-        let findings = detector.analyse(&parsed, "test-crate", "0.1.0");
+        let findings = detector.analyse(&parsed, "test-crate", "0.1.0", &[]);
         assert!(!findings.is_empty());
         assert_eq!(findings[0].category, Category::Fs);
     }
@@ -444,7 +481,7 @@ mod tests {
         "#;
         let parsed = parse_source(source, "test.rs").unwrap();
         let detector = Detector::new();
-        let findings = detector.analyse(&parsed, "test-crate", "0.1.0");
+        let findings = detector.analyse(&parsed, "test-crate", "0.1.0", &[]);
         assert!(!findings.is_empty());
         assert_eq!(findings[0].category, Category::Fs);
         assert!(findings[0].call_text.contains("read_to_string"));
@@ -461,7 +498,7 @@ mod tests {
         "#;
         let parsed = parse_source(source, "test.rs").unwrap();
         let detector = Detector::new();
-        let findings = detector.analyse(&parsed, "test-crate", "0.1.0");
+        let findings = detector.analyse(&parsed, "test-crate", "0.1.0", &[]);
         let proc_findings: Vec<_> = findings
             .iter()
             .filter(|f| f.category == Category::Process)
@@ -484,7 +521,7 @@ mod tests {
         "#;
         let parsed = parse_source(source, "test.rs").unwrap();
         let detector = Detector::new();
-        let findings = detector.analyse(&parsed, "test-crate", "0.1.0");
+        let findings = detector.analyse(&parsed, "test-crate", "0.1.0", &[]);
         let proc_findings: Vec<_> = findings
             .iter()
             .filter(|f| f.category == Category::Process)
@@ -504,7 +541,7 @@ mod tests {
         "#;
         let parsed = parse_source(source, "test.rs").unwrap();
         let detector = Detector::new();
-        let findings = detector.analyse(&parsed, "test-crate", "0.1.0");
+        let findings = detector.analyse(&parsed, "test-crate", "0.1.0", &[]);
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].category, Category::Ffi);
     }
@@ -516,7 +553,7 @@ mod tests {
         "#;
         let parsed = parse_source(source, "test.rs").unwrap();
         let detector = Detector::new();
-        let findings = detector.analyse(&parsed, "test-crate", "0.1.0");
+        let findings = detector.analyse(&parsed, "test-crate", "0.1.0", &[]);
         assert!(findings.is_empty());
     }
 
@@ -530,7 +567,7 @@ mod tests {
         "#;
         let parsed = parse_source(source, "test.rs").unwrap();
         let detector = Detector::new();
-        let findings = detector.analyse(&parsed, "test-crate", "0.1.0");
+        let findings = detector.analyse(&parsed, "test-crate", "0.1.0", &[]);
         assert!(!findings.is_empty());
         assert_eq!(findings[0].category, Category::Process);
         assert_eq!(findings[0].risk, Risk::Critical);
@@ -548,7 +585,7 @@ mod tests {
         "#;
         let parsed = parse_source(source, "test.rs").unwrap();
         let detector = Detector::new();
-        let findings = detector.analyse(&parsed, "test-crate", "0.1.0");
+        let findings = detector.analyse(&parsed, "test-crate", "0.1.0", &[]);
         // Each unique (file, function, line, col) should appear at most once
         let mut seen = std::collections::HashSet::new();
         for f in &findings {
@@ -572,7 +609,7 @@ mod tests {
         "#;
         let parsed = parse_source(source, "test.rs").unwrap();
         let detector = Detector::new();
-        let findings = detector.analyse(&parsed, "test-crate", "0.1.0");
+        let findings = detector.analyse(&parsed, "test-crate", "0.1.0", &[]);
         assert!(!findings.is_empty());
         assert!(findings[0].is_deny_violation);
         assert_eq!(findings[0].risk, Risk::Critical);
@@ -592,7 +629,7 @@ mod tests {
         "#;
         let parsed = parse_source(source, "test.rs").unwrap();
         let detector = Detector::new();
-        let findings = detector.analyse(&parsed, "test-crate", "0.1.0");
+        let findings = detector.analyse(&parsed, "test-crate", "0.1.0", &[]);
         let fs_findings: Vec<_> = findings
             .iter()
             .filter(|f| f.category == Category::Fs)
@@ -616,7 +653,7 @@ mod tests {
         "#;
         let parsed = parse_source(source, "test.rs").unwrap();
         let detector = Detector::new();
-        let findings = detector.analyse(&parsed, "test-crate", "0.1.0");
+        let findings = detector.analyse(&parsed, "test-crate", "0.1.0", &[]);
         assert!(!findings.is_empty());
         assert!(!findings[0].is_deny_violation);
     }
@@ -631,7 +668,7 @@ mod tests {
         "#;
         let parsed = parse_source(source, "test.rs").unwrap();
         let detector = Detector::new();
-        let findings = detector.analyse(&parsed, "test-crate", "0.1.0");
+        let findings = detector.analyse(&parsed, "test-crate", "0.1.0", &[]);
         assert!(
             !findings.is_empty(),
             "Should detect aliased import: use std::fs::read as load"
@@ -653,11 +690,115 @@ mod tests {
         "#;
         let parsed = parse_source(source, "test.rs").unwrap();
         let detector = Detector::new();
-        let findings = detector.analyse(&parsed, "test-crate", "0.1.0");
+        let findings = detector.analyse(&parsed, "test-crate", "0.1.0", &[]);
         assert!(
             !findings.is_empty(),
             "Should detect fs::read inside impl block"
         );
         assert_eq!(findings[0].function, "load");
+    }
+
+    #[test]
+    fn crate_deny_all_flags_everything() {
+        let source = r#"
+            use std::fs;
+            fn normal() {
+                let _ = fs::read("data");
+            }
+        "#;
+        let parsed = parse_source(source, "test.rs").unwrap();
+        let detector = Detector::new();
+        let crate_deny = vec!["all".to_string()];
+        let findings = detector.analyse(&parsed, "test-crate", "0.1.0", &crate_deny);
+        assert!(!findings.is_empty());
+        assert!(findings[0].is_deny_violation);
+        assert_eq!(findings[0].risk, Risk::Critical);
+        assert!(findings[0].description.contains("DENY VIOLATION"));
+    }
+
+    #[test]
+    fn crate_deny_fs_only_flags_fs() {
+        let source = r#"
+            use std::fs;
+            use std::net::TcpStream;
+            fn mixed() {
+                let _ = fs::read("data");
+                let _ = TcpStream::connect("127.0.0.1:80");
+            }
+        "#;
+        let parsed = parse_source(source, "test.rs").unwrap();
+        let detector = Detector::new();
+        let crate_deny = vec!["fs".to_string()];
+        let findings = detector.analyse(&parsed, "test-crate", "0.1.0", &crate_deny);
+        let fs_findings: Vec<_> = findings
+            .iter()
+            .filter(|f| f.category == Category::Fs)
+            .collect();
+        let net_findings: Vec<_> = findings
+            .iter()
+            .filter(|f| f.category == Category::Net)
+            .collect();
+        assert!(fs_findings[0].is_deny_violation);
+        assert_eq!(fs_findings[0].risk, Risk::Critical);
+        assert!(!net_findings[0].is_deny_violation);
+    }
+
+    #[test]
+    fn crate_deny_merges_with_function_deny() {
+        let source = r#"
+            use std::fs;
+            use std::net::TcpStream;
+            #[doc = "capsec::deny(net)"]
+            fn mixed() {
+                let _ = fs::read("data");
+                let _ = TcpStream::connect("127.0.0.1:80");
+            }
+        "#;
+        let parsed = parse_source(source, "test.rs").unwrap();
+        let detector = Detector::new();
+        let crate_deny = vec!["fs".to_string()];
+        let findings = detector.analyse(&parsed, "test-crate", "0.1.0", &crate_deny);
+        let fs_findings: Vec<_> = findings
+            .iter()
+            .filter(|f| f.category == Category::Fs)
+            .collect();
+        let net_findings: Vec<_> = findings
+            .iter()
+            .filter(|f| f.category == Category::Net)
+            .collect();
+        // Both should be deny violations: fs from crate-level, net from function-level
+        assert!(fs_findings[0].is_deny_violation);
+        assert!(net_findings[0].is_deny_violation);
+    }
+
+    #[test]
+    fn crate_deny_flags_extern_blocks() {
+        let source = r#"
+            extern "C" {
+                fn open(path: *const u8, flags: i32) -> i32;
+            }
+        "#;
+        let parsed = parse_source(source, "test.rs").unwrap();
+        let detector = Detector::new();
+        let crate_deny = vec!["all".to_string()];
+        let findings = detector.analyse(&parsed, "test-crate", "0.1.0", &crate_deny);
+        assert_eq!(findings.len(), 1);
+        assert!(findings[0].is_deny_violation);
+        assert_eq!(findings[0].risk, Risk::Critical);
+    }
+
+    #[test]
+    fn empty_crate_deny_no_regression() {
+        let source = r#"
+            use std::fs;
+            fn normal() {
+                let _ = fs::read("data");
+            }
+        "#;
+        let parsed = parse_source(source, "test.rs").unwrap();
+        let detector = Detector::new();
+        let findings = detector.analyse(&parsed, "test-crate", "0.1.0", &[]);
+        assert!(!findings.is_empty());
+        assert!(!findings[0].is_deny_violation);
     }
 }

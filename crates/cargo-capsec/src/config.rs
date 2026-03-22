@@ -7,10 +7,14 @@
 //!   internal RPC, secret fetchers) that the built-in registry doesn't cover.
 //! - **Allow rules** — suppress known-good findings by crate name and/or function name.
 //! - **Exclude patterns** — skip files matching glob patterns (tests, benches, generated code).
+//! - **Deny rules** — treat all ambient authority in matching categories as Critical deny violations.
 //!
 //! # Example
 //!
 //! ```toml
+//! [deny]
+//! categories = ["all"]
+//!
 //! [analysis]
 //! exclude = ["tests/**", "benches/**"]
 //!
@@ -34,15 +38,30 @@ const CONFIG_FILE: &str = ".capsec.toml";
 /// Top-level configuration loaded from `.capsec.toml`.
 ///
 /// All fields are optional — a missing config file produces sensible defaults
-/// (no excludes, no custom authorities, no allow rules).
+/// (no excludes, no custom authorities, no allow rules, no deny rules).
 #[derive(Debug, Deserialize, Default)]
 pub struct Config {
+    #[serde(default)]
+    pub deny: DenyConfig,
     #[serde(default)]
     pub analysis: AnalysisConfig,
     #[serde(default)]
     pub authority: Vec<AuthorityEntry>,
     #[serde(default)]
     pub allow: Vec<AllowEntry>,
+}
+
+/// Crate-level deny configuration from `[deny]` in `.capsec.toml`.
+///
+/// When categories are specified, any ambient authority matching those categories
+/// is promoted to a Critical-risk deny violation — the same behavior as
+/// `#[capsec::deny(...)]` on individual functions, but applied crate-wide.
+///
+/// Valid categories: `all`, `fs`, `net`, `env`, `process`, `ffi`.
+#[derive(Debug, Deserialize, Default)]
+pub struct DenyConfig {
+    #[serde(default)]
+    pub categories: Vec<String>,
 }
 
 /// Settings that control which files are scanned.
@@ -86,6 +105,26 @@ impl AllowEntry {
     /// Returns the crate name from either `crate` or `crate_name` key.
     pub fn effective_crate(&self) -> Option<&str> {
         self.crate_name.as_deref().or(self.crate_key.as_deref())
+    }
+}
+
+const VALID_DENY_CATEGORIES: &[&str] = &["all", "fs", "net", "env", "process", "ffi"];
+
+impl DenyConfig {
+    /// Normalizes category names to lowercase and warns about unknown categories.
+    pub fn normalized_categories(&self) -> Vec<String> {
+        self.categories
+            .iter()
+            .filter_map(|cat| {
+                let lower = cat.to_lowercase();
+                if VALID_DENY_CATEGORIES.contains(&lower.as_str()) {
+                    Some(lower)
+                } else {
+                    eprintln!("Warning: unknown deny category '{cat}', ignoring (valid: all, fs, net, env, process, ffi)");
+                    None
+                }
+            })
+            .collect()
     }
 }
 
@@ -209,6 +248,45 @@ mod tests {
         let config = load_config(Path::new("/nonexistent/path"), &cap).unwrap();
         assert!(config.authority.is_empty());
         assert!(config.allow.is_empty());
+    }
+
+    #[test]
+    fn parse_deny_config() {
+        let toml = r#"
+            [deny]
+            categories = ["all"]
+        "#;
+        let config: Config = toml::from_str(toml).unwrap();
+        assert_eq!(config.deny.categories, vec!["all"]);
+    }
+
+    #[test]
+    fn parse_deny_selective_categories() {
+        let toml = r#"
+            [deny]
+            categories = ["fs", "net"]
+        "#;
+        let config: Config = toml::from_str(toml).unwrap();
+        assert_eq!(config.deny.categories, vec!["fs", "net"]);
+    }
+
+    #[test]
+    fn missing_deny_section_defaults_to_empty() {
+        let toml = r#"
+            [[allow]]
+            crate = "tracing"
+        "#;
+        let config: Config = toml::from_str(toml).unwrap();
+        assert!(config.deny.categories.is_empty());
+    }
+
+    #[test]
+    fn normalized_categories_lowercases_and_filters() {
+        let deny = DenyConfig {
+            categories: vec!["FS".to_string(), "bogus".to_string(), "net".to_string()],
+        };
+        let normalized = deny.normalized_categories();
+        assert_eq!(normalized, vec!["fs", "net"]);
     }
 
     #[test]

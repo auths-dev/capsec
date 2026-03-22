@@ -78,6 +78,7 @@ fn run_audit(args: AuditArgs) {
     let mut det = detector::Detector::new();
     let customs = config::custom_authorities(&cfg);
     det.add_custom_authorities(&customs);
+    let crate_deny = cfg.deny.normalized_categories();
 
     // Parse and detect
     let mut all_findings = Vec::new();
@@ -92,7 +93,7 @@ fn run_audit(args: AuditArgs) {
 
             match parser::parse_file(&file_path, &fs_read) {
                 Ok(parsed) => {
-                    let findings = det.analyse(&parsed, &krate.name, &krate.version);
+                    let findings = det.analyse(&parsed, &krate.name, &krate.version, &crate_deny);
                     all_findings.extend(findings);
                 }
                 Err(e) => {
@@ -180,6 +181,15 @@ fn run_check_deny(args: CheckDenyArgs) {
 
     let path_arg = args.path.canonicalize().unwrap_or(args.path.clone());
 
+    // Load config
+    let cfg = match config::load_config(&path_arg, &fs_read) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Warning: {e}");
+            config::Config::default()
+        }
+    };
+
     // Discover crates
     let discovery = match discovery::discover_crates(&path_arg, false, &spawn_cap, &fs_read) {
         Ok(d) => d,
@@ -211,8 +221,11 @@ fn run_check_deny(args: CheckDenyArgs) {
         })
         .collect();
 
-    // Set up detector
-    let det = detector::Detector::new();
+    // Set up detector with custom authorities
+    let mut det = detector::Detector::new();
+    let customs = config::custom_authorities(&cfg);
+    det.add_custom_authorities(&customs);
+    let crate_deny = cfg.deny.normalized_categories();
 
     // Parse, detect, and filter to deny violations only
     let mut violations = Vec::new();
@@ -223,7 +236,7 @@ fn run_check_deny(args: CheckDenyArgs) {
         for file_path in source_files {
             match parser::parse_file(&file_path, &fs_read) {
                 Ok(parsed) => {
-                    let findings = det.analyse(&parsed, &krate.name, &krate.version);
+                    let findings = det.analyse(&parsed, &krate.name, &krate.version, &crate_deny);
                     violations.extend(findings.into_iter().filter(|f| f.is_deny_violation).map(
                         |mut f| {
                             f.file = make_relative(&f.file, &workspace_root);
@@ -239,7 +252,14 @@ fn run_check_deny(args: CheckDenyArgs) {
     }
 
     if violations.is_empty() {
-        println!("OK  All #[capsec::deny] annotations are respected.");
+        if crate_deny.is_empty() {
+            println!("OK  All #[capsec::deny] annotations are respected.");
+        } else {
+            println!(
+                "OK  All deny rules are respected (crate-level: [{}])",
+                crate_deny.join(", ")
+            );
+        }
         return;
     }
 
@@ -314,6 +334,7 @@ fn run_badge(args: BadgeArgs) {
     let mut det = detector::Detector::new();
     let customs = config::custom_authorities(&cfg);
     det.add_custom_authorities(&customs);
+    let crate_deny = cfg.deny.normalized_categories();
 
     let mut all_findings = Vec::new();
     for krate in &crates {
@@ -326,7 +347,7 @@ fn run_badge(args: BadgeArgs) {
                 continue;
             }
             if let Ok(parsed) = parser::parse_file(&file_path, &fs_read) {
-                let findings = det.analyse(&parsed, &krate.name, &krate.version);
+                let findings = det.analyse(&parsed, &krate.name, &krate.version, &crate_deny);
                 all_findings.extend(findings);
             }
         }
