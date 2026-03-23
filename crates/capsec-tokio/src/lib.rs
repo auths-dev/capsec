@@ -1,3 +1,6 @@
+#![deny(missing_docs)]
+#![deny(rustdoc::broken_intra_doc_links)]
+
 //! # capsec-tokio
 //!
 //! Async capability-gated wrappers for [tokio](https://tokio.rs/) — the async

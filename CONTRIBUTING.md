@@ -156,6 +156,7 @@ TRYBUILD=overwrite cargo test -p capsec --test compile_tests
 - **Include tests.** New authority patterns need integration tests. New type-system features need compile-fail tests.
 - **Run `cargo capsec audit`** against the repo itself before submitting — capsec dogfoods its own tool.
 - **Keep the security model intact.** `Cap<P>` must remain unforgeable and `!Send`. `Permission` must remain sealed. `Cap::new()` must remain `pub(crate)`. Any change that weakens these guarantees needs discussion in an issue first.
+- **`#[must_use]` convention.** Any new function or method returning `Result<T, CapSecError>`, `Cap<P>`, `SendCap<P>`, or `CapRoot` must have `#[must_use]`. Exception: if the return type itself already carries `#[must_use]` (e.g., `Cap<P>` does), a bare `#[must_use]` on the function is redundant and clippy will flag it — skip it in that case. The goal: discarding a capability check or proof token should always produce a compiler warning.
 - **Update docs** if you change public API. The facade crate's `lib.rs` doc comments and crate READMEs should stay current.
 
 ## Context pattern and macros
