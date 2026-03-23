@@ -1,3 +1,6 @@
+#![deny(missing_docs)]
+#![deny(rustdoc::broken_intra_doc_links)]
+
 //! # capsec-core
 //!
 //! Zero-cost capability tokens and permission traits for compile-time
