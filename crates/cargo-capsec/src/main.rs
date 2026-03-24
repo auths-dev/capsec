@@ -98,6 +98,7 @@ fn run_audit(args: AuditArgs) {
 
             let source_files = discovery::discover_source_files(&krate.source_dir, &fs_read);
             let mut dep_findings = Vec::new();
+            let mut parsed_files = Vec::new();
 
             for file_path in source_files {
                 match parser::parse_file(&file_path, &fs_read) {
@@ -105,6 +106,7 @@ fn run_audit(args: AuditArgs) {
                         let findings =
                             det.analyse(&parsed, &krate.name, &krate.version, &crate_deny);
                         dep_findings.extend(findings);
+                        parsed_files.push(parsed);
                     }
                     Err(_e) => {
                         // Silently skip unparseable files in deps
@@ -112,12 +114,16 @@ fn run_audit(args: AuditArgs) {
                 }
             }
 
-            let emap = export_map::build_export_map(
+            let mut emap = export_map::build_export_map(
                 &normalized_name,
                 &krate.version,
                 &dep_findings,
                 &krate.source_dir,
             );
+
+            // Also export extern function declarations (e.g., libgit2-sys, sqlite3-sys)
+            // so callers like git2 get cross-crate FFI findings.
+            export_map::add_extern_exports(&mut emap, &parsed_files, &krate.source_dir);
 
             // Cache for registry deps
             if krate.is_dependency {
@@ -170,6 +176,7 @@ fn run_audit(args: AuditArgs) {
 
                 let source_files = discovery::discover_source_files(&krate.source_dir, &fs_read);
                 let mut dep_findings = Vec::new();
+                let mut parsed_files = Vec::new();
 
                 for file_path in source_files {
                     match parser::parse_file(&file_path, &fs_read) {
@@ -177,6 +184,7 @@ fn run_audit(args: AuditArgs) {
                             let findings =
                                 det.analyse(&parsed, &krate.name, &krate.version, &crate_deny);
                             dep_findings.extend(findings);
+                            parsed_files.push(parsed);
                         }
                         Err(e) => {
                             eprintln!("  Warning: {e}");
@@ -184,12 +192,13 @@ fn run_audit(args: AuditArgs) {
                     }
                 }
 
-                let emap = export_map::build_export_map(
+                let mut emap = export_map::build_export_map(
                     &normalized_name,
                     &krate.version,
                     &dep_findings,
                     &krate.source_dir,
                 );
+                export_map::add_extern_exports(&mut emap, &parsed_files, &krate.source_dir);
 
                 if krate.is_dependency {
                     export_map::save_export_map_cache(&cache_dir, &emap, &fs_write);
@@ -274,6 +283,7 @@ fn run_audit(args: AuditArgs) {
 
                 let source_files = discovery::discover_source_files(&krate.source_dir, &fs_read);
                 let mut ws_crate_findings = Vec::new();
+                let mut ws_parsed_files = Vec::new();
 
                 for file_path in source_files {
                     if config::should_exclude(&file_path, &cfg.analysis.exclude) {
@@ -285,6 +295,7 @@ fn run_audit(args: AuditArgs) {
                             let findings =
                                 det.analyse(&parsed, &krate.name, &krate.version, &crate_deny);
                             ws_crate_findings.extend(findings);
+                            ws_parsed_files.push(parsed);
                         }
                         Err(e) => {
                             eprintln!("  Warning: {e}");
@@ -294,12 +305,13 @@ fn run_audit(args: AuditArgs) {
 
                 // Build export map for this workspace crate (for downstream ws crates)
                 let normalized_name = discovery::normalize_crate_name(&krate.name);
-                let ws_emap = export_map::build_export_map(
+                let mut ws_emap = export_map::build_export_map(
                     &normalized_name,
                     &krate.version,
                     &ws_crate_findings,
                     &krate.source_dir,
                 );
+                export_map::add_extern_exports(&mut ws_emap, &ws_parsed_files, &krate.source_dir);
                 workspace_export_maps.push(ws_emap);
 
                 all_findings.extend(ws_crate_findings);

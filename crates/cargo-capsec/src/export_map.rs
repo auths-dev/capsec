@@ -124,8 +124,66 @@ pub fn build_export_map(
 
     CrateExportMap {
         crate_name: crate_name.to_string(),
+
         crate_version: crate_version.to_string(),
         exports,
+    }
+}
+
+/// Adds extern function declarations from parsed files to an export map.
+///
+/// When a crate like `libgit2-sys` declares `extern "C" { fn git_repository_open(...); }`,
+/// this creates an FFI export entry for `git_repository_open` so that other crates
+/// calling `libgit2_sys::git_repository_open()` get a cross-crate FFI finding.
+///
+/// This is necessary because extern block findings have `function: "extern \"C\""` which
+/// produces useless export map keys. The individual function names need to be exported.
+pub fn add_extern_exports(
+    export_map: &mut CrateExportMap,
+    parsed_files: &[crate::parser::ParsedFile],
+    src_dir: &Path,
+) {
+    let crate_name = &export_map.crate_name;
+
+    for file in parsed_files {
+        // Skip build.rs extern blocks (compile-time only)
+        if file.path.ends_with("build.rs") {
+            continue;
+        }
+
+        for ext in &file.extern_blocks {
+            let module_path = file_to_module_path(&file.path, src_dir);
+
+            for fn_name in &ext.functions {
+                let auth = ExportedAuthority {
+                    category: crate::authorities::Category::Ffi,
+                    risk: crate::authorities::Risk::High,
+                    leaf_call: format!("extern {fn_name}"),
+                    is_transitive: false,
+                };
+
+                // Full path: crate::module::fn_name
+                let mut full_path = vec![crate_name.clone()];
+                full_path.extend(module_path.clone());
+                full_path.push(fn_name.clone());
+                let key = full_path.join("::");
+                export_map
+                    .exports
+                    .entry(key.clone())
+                    .or_default()
+                    .push(auth.clone());
+
+                // Short form: crate::fn_name (for crate-scoped matching)
+                let short_key = format!("{crate_name}::{fn_name}");
+                if short_key != key {
+                    export_map
+                        .exports
+                        .entry(short_key)
+                        .or_default()
+                        .push(auth);
+                }
+            }
+        }
     }
 }
 
@@ -140,7 +198,8 @@ pub struct CachedExportMap {
 }
 
 /// Current schema version for cached export maps.
-pub const EXPORT_MAP_SCHEMA_VERSION: u32 = 1;
+/// Bumped to 2: added extern function declaration exports.
+pub const EXPORT_MAP_SCHEMA_VERSION: u32 = 2;
 
 /// Attempts to load a cached export map for a dependency crate.
 ///
