@@ -50,5 +50,6 @@ pub mod deep;
 pub mod detector;
 pub mod discovery;
 pub mod export_map;
+pub mod init;
 pub mod parser;
 pub mod reporter;

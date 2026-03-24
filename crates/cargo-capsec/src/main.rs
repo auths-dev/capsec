@@ -7,6 +7,7 @@ mod deep;
 mod detector;
 mod discovery;
 mod export_map;
+mod init;
 mod parser;
 mod reporter;
 
@@ -24,6 +25,15 @@ fn main() {
         Commands::Audit(args) => run_audit(args),
         Commands::CheckDeny(args) => run_check_deny(args),
         Commands::Badge(args) => run_badge(args),
+        Commands::Init(args) => init::run_init(init::InitOptions {
+            path: args.path,
+            ci: args.ci,
+            interactive: args.interactive,
+            report: args.report,
+            exclude_tests: args.exclude_tests,
+            baseline: args.baseline,
+            force: args.force,
+        }),
     }
 }
 
@@ -71,7 +81,7 @@ fn run_audit(args: AuditArgs) {
     let mut all_findings = Vec::new();
 
     if scan_deps {
-        // ── Cross-crate two-phase scan ──
+        // Cross-crate two-phase scan ──
 
         // Phase 1: Scan dependency crates, build export maps.
         // Check cache first; only scan if cache miss.
@@ -213,7 +223,7 @@ fn run_audit(args: AuditArgs) {
             }
         }
 
-        // ── Deep MIR analysis (runs before Phase 2 so findings feed into export maps) ──
+        // Deep MIR analysis (runs before Phase 2 so findings feed into export maps)
         if args.deep {
             let deep_result = deep::run_deep_analysis(
                 &path_arg,
@@ -342,7 +352,7 @@ fn run_audit(args: AuditArgs) {
             }
         }
     } else {
-        // ── Original single-pass scan (no deps) ──
+        // Original single-pass scan (no deps) ──
         for krate in &workspace_crates {
             if let Some(ref only) = args.only {
                 let allowed: Vec<&str> = only.split(',').collect();
