@@ -43,6 +43,8 @@ pub enum Commands {
     CheckDeny(CheckDenyArgs),
     /// Generate a shields.io badge from audit results
     Badge(BadgeArgs),
+    /// Bootstrap capsec for an existing codebase
+    Init(InitArgs),
 }
 
 #[derive(clap::Args)]
@@ -137,4 +139,35 @@ pub struct BadgeArgs {
     /// Risk threshold for badge color (default: high)
     #[arg(long, default_value = "high", value_parser = ["low", "medium", "high", "critical"])]
     pub fail_on: String,
+}
+
+#[derive(clap::Args)]
+pub struct InitArgs {
+    /// Path to workspace root
+    #[arg(short, long, default_value = ".")]
+    pub path: PathBuf,
+
+    /// Generate CI config (github, gitlab, generic)
+    #[arg(long, value_parser = ["github", "gitlab", "generic"])]
+    pub ci: Option<String>,
+
+    /// Run interactively (prompt for each choice)
+    #[arg(long)]
+    pub interactive: bool,
+
+    /// Show migration priority report after init
+    #[arg(long)]
+    pub report: bool,
+
+    /// Exclude test/bench/example directories (default: true)
+    #[arg(long, default_value_t = true)]
+    pub exclude_tests: bool,
+
+    /// Save baseline alongside config (default: true)
+    #[arg(long, default_value_t = true)]
+    pub baseline: bool,
+
+    /// Overwrite existing .capsec.toml
+    #[arg(long)]
+    pub force: bool,
 }
