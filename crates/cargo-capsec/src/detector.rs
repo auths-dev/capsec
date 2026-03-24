@@ -34,7 +34,7 @@ use std::collections::{HashMap, HashSet};
 /// The detector deduplicates findings by `(file, function, call_line, call_col)`,
 /// so each unique call site appears at most once even if multiple import paths
 /// could match it.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub struct Finding {
     /// Source file path.
     pub file: String,

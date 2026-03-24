@@ -1,0 +1,18 @@
+[package]
+name = "capsec-deep"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "MIR-based deep analysis driver for capsec — requires nightly"
+publish = false
+
+[[bin]]
+name = "capsec-driver"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[package.metadata.rust-analyzer]
+rustc_private = true

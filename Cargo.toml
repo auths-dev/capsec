@@ -12,6 +12,7 @@ members = [
 ]
 exclude = [
     "crates/capsec-example-db",
+    "crates/capsec-deep",
 ]
 
 [workspace.package]
