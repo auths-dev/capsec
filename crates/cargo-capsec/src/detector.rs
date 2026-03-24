@@ -269,33 +269,32 @@ impl Detector {
                     if let Some(last_seg) = expanded.last()
                         && extern_fn_names.contains(last_seg.as_str())
                     {
-                            let deny_violation =
-                                is_category_denied(&effective_deny, &Category::Ffi);
-                            findings.push(Finding {
-                                file: file.path.clone(),
-                                function: func.name.clone(),
-                                function_line: func.line,
-                                call_line: call.line,
-                                call_col: call.col,
-                                call_text: expanded.join("::"),
-                                category: Category::Ffi,
-                                subcategory: "ffi_call".to_string(),
-                                risk: if deny_violation {
-                                    Risk::Critical
-                                } else {
-                                    Risk::High
-                                },
-                                description: if deny_violation {
-                                    format!("DENY VIOLATION: Calls FFI function {}()", last_seg)
-                                } else {
-                                    format!("Calls FFI function {}()", last_seg)
-                                },
-                                is_build_script: func.is_build_script,
-                                crate_name: crate_name.to_string(),
-                                crate_version: crate_version.to_string(),
-                                is_deny_violation: deny_violation,
-                                is_transitive: false,
-                            });
+                        let deny_violation = is_category_denied(&effective_deny, &Category::Ffi);
+                        findings.push(Finding {
+                            file: file.path.clone(),
+                            function: func.name.clone(),
+                            function_line: func.line,
+                            call_line: call.line,
+                            call_col: call.col,
+                            call_text: expanded.join("::"),
+                            category: Category::Ffi,
+                            subcategory: "ffi_call".to_string(),
+                            risk: if deny_violation {
+                                Risk::Critical
+                            } else {
+                                Risk::High
+                            },
+                            description: if deny_violation {
+                                format!("DENY VIOLATION: Calls FFI function {}()", last_seg)
+                            } else {
+                                format!("Calls FFI function {}()", last_seg)
+                            },
+                            is_build_script: func.is_build_script,
+                            crate_name: crate_name.to_string(),
+                            crate_version: crate_version.to_string(),
+                            is_deny_violation: deny_violation,
+                            is_transitive: false,
+                        });
                     }
                 }
             }
