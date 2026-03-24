@@ -1,0 +1,8 @@
+/target
+*.o
+*.d
+# Binaries produced when testing the driver on fixture files
+/clean
+/simple_fs
+/macro_ffi
+/capsec_test

@@ -70,6 +70,12 @@ pub struct AuditArgs {
     #[arg(long, default_value_t = 1)]
     pub dep_depth: usize,
 
+    /// Use MIR-based deep analysis (requires nightly toolchain + capsec-driver).
+    /// Catches macro-expanded FFI, trait dispatch, and generic instantiation
+    /// that syntactic analysis misses.
+    #[arg(long)]
+    pub deep: bool,
+
     /// Minimum risk level to report
     #[arg(long, default_value = "low", value_parser = ["low", "medium", "high", "critical"])]
     pub min_risk: String,
